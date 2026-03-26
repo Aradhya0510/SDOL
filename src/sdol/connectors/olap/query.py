@@ -113,13 +113,22 @@ def build_aggregate_query(intent: AggregateAnalysisIntent) -> OLAPQuery:
     )
 
 
-def build_temporal_query(intent: TemporalTrendIntent) -> OLAPQuery:
-    """Build a temporal trend SQL query with partition pruning."""
+def build_temporal_query(
+    intent: TemporalTrendIntent,
+    *,
+    time_column: str = "timestamp",
+) -> OLAPQuery:
+    """Build a temporal trend SQL query with partition pruning.
+
+    Args:
+        time_column: Column holding the time dimension (e.g. ``created_at``).
+    """
     params: list[Any] = []
     optimizations: list[str] = ["predicate_pushdown"]
     uses_partition_pruning = False
     uses_precomputed_rollup = False
 
+    tc = time_column
     time_bucket = intent.granularity or "1d"
     if time_bucket in KNOWN_ROLLUPS:
         uses_precomputed_rollup = True
@@ -128,19 +137,19 @@ def build_temporal_query(intent: TemporalTrendIntent) -> OLAPQuery:
     else:
         table = intent.entity
 
-    select_clause = f"time_bucket('{time_bucket}', timestamp) AS bucket, AVG({intent.metric}) AS {intent.metric}"
+    select_clause = f"time_bucket('{time_bucket}', {tc}) AS bucket, AVG({intent.metric}) AS {intent.metric}"
 
     where_parts: list[str] = []
     if intent.window.start:
         params.append(intent.window.start)
-        where_parts.append(f"timestamp >= ${len(params)}")
+        where_parts.append(f"{tc} >= ${len(params)}")
         uses_partition_pruning = True
     if intent.window.end:
         params.append(intent.window.end)
-        where_parts.append(f"timestamp <= ${len(params)}")
+        where_parts.append(f"{tc} <= ${len(params)}")
         uses_partition_pruning = True
     if intent.window.relative:
-        where_parts.append(f"timestamp >= NOW() - INTERVAL '{intent.window.relative}'")
+        where_parts.append(f"{tc} >= NOW() - INTERVAL '{intent.window.relative}'")
         uses_partition_pruning = True
 
     if uses_partition_pruning:

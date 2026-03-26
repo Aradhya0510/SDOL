@@ -6,6 +6,7 @@ from sdol.connectors.olap.databricks_dbsql import DatabricksDBSQLConnector
 from sdol.connectors.olap.databricks_dbsql_query import (
     build_dbsql_aggregate_query,
     build_dbsql_temporal_query,
+    parse_relative_window,
 )
 from sdol.connectors.executor import MockQueryExecutor
 from sdol.types.context import ContextSlotType
@@ -287,3 +288,76 @@ class TestDBSQLQueryBuilder:
         assert ":p1" in query.sql
         assert query.parameters["p0"] == "west"
         assert query.parameters["p1"] == "east"
+
+    # ── time_column support ──
+
+    def test_temporal_custom_time_column(self) -> None:
+        intent = TemporalTrendIntent(
+            id="i-1",
+            entity="sales",
+            metric="total_amount",
+            window=TimeWindow(relative="last_30d"),
+            granularity="1d",
+        )
+        query = build_dbsql_temporal_query(intent, time_column="order_date")
+        assert "DATE_TRUNC('DAY', order_date)" in query.sql
+        assert "order_date >= CURRENT_TIMESTAMP()" in query.sql
+        assert "timestamp" not in query.sql
+
+    def test_temporal_absolute_window_uses_custom_column(self) -> None:
+        intent = TemporalTrendIntent(
+            id="i-1",
+            entity="revenue",
+            metric="total_revenue",
+            window=TimeWindow(start="2025-01-01", end="2025-12-31"),
+        )
+        query = build_dbsql_temporal_query(intent, time_column="report_date")
+        assert "report_date >= :p0" in query.sql
+        assert "report_date <= :p1" in query.sql
+
+
+class TestParseRelativeWindow:
+    def test_days(self) -> None:
+        assert parse_relative_window("last_90d") == "INTERVAL 90 DAY"
+
+    def test_hours(self) -> None:
+        assert parse_relative_window("last_24h") == "INTERVAL 24 HOUR"
+
+    def test_weeks(self) -> None:
+        assert parse_relative_window("last_4w") == "INTERVAL 4 WEEK"
+
+    def test_months(self) -> None:
+        assert parse_relative_window("last_6M") == "INTERVAL 6 MONTH"
+
+    def test_years(self) -> None:
+        assert parse_relative_window("last_1y") == "INTERVAL 1 YEAR"
+
+    def test_quarters_convert_to_months(self) -> None:
+        assert parse_relative_window("last_2Q") == "INTERVAL 6 MONTH"
+
+    def test_passthrough_for_unknown_format(self) -> None:
+        assert parse_relative_window("30 DAY") == "INTERVAL 30 DAY"
+
+
+class TestTimeColumnMap:
+    @pytest.mark.asyncio
+    async def test_connector_routes_time_column_per_entity(self) -> None:
+        executor = MockQueryExecutor(
+            records=[{"bucket": "2025-07-01", "total_amount": 1000}]
+        )
+        connector = DatabricksDBSQLConnector(
+            executor=executor,
+            time_column_map={"sales": "order_date", "metrics": "event_ts"},
+        )
+        intent = TemporalTrendIntent(
+            id="i-1",
+            entity="sales",
+            metric="total_amount",
+            window=TimeWindow(relative="last_30d"),
+            granularity="1M",
+        )
+        result = await connector.execute(intent)
+        native_sql = executor.last_query.sql
+        assert "order_date" in native_sql
+        assert "timestamp" not in native_sql
+        assert result.slot_type == ContextSlotType.TEMPORAL

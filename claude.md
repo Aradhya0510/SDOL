@@ -4,7 +4,7 @@
 
 All milestones (0–12) from `SDOL_IMPLEMENTATION_SPEC_PYTHON.md` have been implemented and tested.
 
-**Test results:** 206 passed, 0 failed (0.27s)
+**Test results:** 216 passed, 0 failed (0.21s)
 
 ## Milestone Summary
 

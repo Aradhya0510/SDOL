@@ -38,8 +38,8 @@ dbutils.library.restartPython()
 
 # COMMAND ----------
 
-CATALOG = "sdol_benchmark"   # Must match 00_setup notebook
-SCHEMA = "data"
+CATALOG = "users"   # Must match 00_setup notebook
+SCHEMA = "aradhya_chouhan"
 
 LLM_ENDPOINT = "databricks-claude-3-7-sonnet"  # TODO: any Foundation Model endpoint
 
@@ -104,7 +104,11 @@ from sdol.core.router.query_planner import QueryPlanner
 
 
 class SparkSQLExecutor:
-    """Bridges SDOL's QueryExecutor protocol with the notebook's SparkSession."""
+    """Bridges SDOL's QueryExecutor protocol with the notebook's SparkSession.
+
+    Errors are **propagated** rather than swallowed so that SDOL tools can
+    report the real failure to the LLM instead of returning empty results.
+    """
 
     async def execute(self, query) -> dict:
         sql_str = query.sql
@@ -114,12 +118,12 @@ class SparkSQLExecutor:
                 sql_str = sql_str.replace(placeholder, f"'{v}'")
             else:
                 sql_str = sql_str.replace(placeholder, str(v))
-        try:
-            df = spark.sql(sql_str)
-            records = [row.asDict() for row in df.limit(500).collect()]
-            return {"records": records, "meta": {"native_query": query.sql, "total_available": len(records)}}
-        except Exception as exc:
-            return {"records": [], "meta": {"native_query": query.sql, "error": str(exc)}}
+        df = spark.sql(sql_str)
+        records = [row.asDict() for row in df.limit(500).collect()]
+        return {
+            "records": records,
+            "meta": {"native_query": sql_str, "total_available": len(records)},
+        }
 
 
 executor = SparkSQLExecutor()
@@ -131,6 +135,10 @@ dbsql_connector = DatabricksDBSQLConnector(
     available_entities=["sales_transactions", "revenue_daily"],
     catalog=CATALOG,
     schema=SCHEMA,
+    time_column_map={
+        "sales_transactions": "order_date",
+        "revenue_daily": "report_date",
+    },
 )
 
 lakebase_connector = DatabricksLakebaseConnector(
@@ -175,6 +183,65 @@ print(f"  OLTP entities : {lakebase_connector._available_entities}")
 
 from langchain_core.tools import tool
 
+def _parse_filters(raw: str) -> list[dict] | None:
+    """Parse a flexible filter string into SDOL FilterClause dicts.
+
+    Accepted formats (semicolon-separated):
+      • field = value          (equality shorthand)
+      • field:op:value         (explicit operator)
+      • field op value         (space-separated, op in {=, !=, >, <, >=, <=})
+
+    Returns None when *raw* is empty.
+    """
+    if not raw or not raw.strip():
+        return None
+    OP_ALIAS = {"=": "eq", "!=": "neq", ">": "gt", ">=": "gte", "<": "lt", "<=": "lte"}
+    result = []
+    for part in raw.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        # field:op:value
+        if part.count(":") >= 2:
+            segs = part.split(":", 2)
+            field, op, val = segs[0].strip(), segs[1].strip(), segs[2].strip()
+        # field = value / field != value …
+        else:
+            matched = False
+            for sym in ("!=", ">=", "<=", ">", "<", "="):
+                if sym in part:
+                    field, val = [s.strip() for s in part.split(sym, 1)]
+                    op = OP_ALIAS.get(sym, "eq")
+                    matched = True
+                    break
+            if not matched:
+                continue
+        val = val.strip("'\"")
+        try:
+            val = float(val)
+        except ValueError:
+            pass
+        result.append({"field": field, "operator": op, "value": val})
+    return result or None
+
+def _format_frame(frame, include_confidence=True) -> str:
+    """Extract results + optional epistemic context from a ContextFrame."""
+    results = []
+    for slot in frame.slots:
+        for elem in slot.elements:
+            results.append({
+                "data": elem.data,
+                "source": elem.provenance.source_system,
+                "freshness_sec": elem.provenance.staleness_window_sec,
+                "consistency": elem.provenance.consistency.value,
+                "precision": elem.provenance.precision.value,
+                "trust_score": round(elem.trust.composite, 3),
+            })
+    out = {"results": results, "result_count": len(results)}
+    if include_confidence:
+        out["data_confidence"] = sdol.get_epistemic_context()
+    return json.dumps(out, indent=2, default=str)
+
 # ─────────────────────── Baseline Tools ───────────────────────
 
 @tool
@@ -215,111 +282,111 @@ def sdol_point_lookup(entity: str, id_field: str, id_value: str, fields: str = "
     """Look up a specific record by its identifier via SDOL optimized routing.
 
     Args:
-        entity: Table name, e.g. 'customers', 'products', 'orders'.
+        entity: Table name — 'customers', 'products', or 'orders'.
         id_field: Identifier column name, e.g. 'customer_id'.
         id_value: Identifier value, e.g. 'C-0042'.
         fields: Comma-separated columns to return (empty = all).
     """
-    field_list = [f.strip() for f in fields.split(",") if f.strip()] or None
-    intent = sdol.formulator.point_lookup(entity, {id_field: id_value}, fields=field_list)
-    frame = asyncio.run(sdol.query(intent))
-
-    results = []
-    for slot in frame.slots:
-        for elem in slot.elements:
-            results.append({
-                "data": elem.data,
-                "source": elem.provenance.source_system,
-                "freshness_sec": elem.provenance.staleness_window_sec,
-                "consistency": elem.provenance.consistency.value,
-                "precision": elem.provenance.precision.value,
-                "trust_score": round(elem.trust.composite, 3),
-            })
-    return json.dumps({"results": results, "data_confidence": sdol.get_epistemic_context()}, indent=2, default=str)
+    try:
+        field_list = [f.strip() for f in fields.split(",") if f.strip()] or None
+        intent = sdol.formulator.point_lookup(entity, {id_field: id_value}, fields=field_list)
+        frame = asyncio.run(sdol.query(intent))
+        return _format_frame(frame)
+    except Exception as exc:
+        return json.dumps({"error": str(exc), "data_confidence": sdol.get_epistemic_context()})
 
 
 @tool
 def sdol_aggregate(
     entity: str,
-    measure_field: str,
-    aggregation: str,
+    measures: str,
     dimensions: str,
     filters: str = "",
-    order_by_field: str = "",
-    order_by_dir: str = "desc",
+    order_by: str = "",
 ) -> str:
-    """Run an aggregate analysis via SDOL (routes to OLAP automatically).
+    """Run an aggregate analysis via SDOL (routes to the optimal OLAP backend).
 
     Args:
-        entity: Table name, e.g. 'sales_transactions', 'revenue_daily'.
-        measure_field: Column to aggregate, e.g. 'total_amount'.
-        aggregation: One of sum, avg, min, max, count, count_distinct.
-        dimensions: Comma-separated grouping columns, e.g. 'region,channel'.
-        filters: Optional semicolon-separated filters as field:op:value, e.g. 'status:eq:completed'.
-        order_by_field: Optional field to sort by.
-        order_by_dir: Sort direction — 'asc' or 'desc'.
+        entity: Table name — 'sales_transactions' or 'revenue_daily'.
+        measures: One or more measures as 'agg(field)' separated by commas.
+                  Examples: 'sum(total_amount)', 'count(order_id), avg(total_amount)'.
+        dimensions: Comma-separated grouping columns, e.g. 'region' or 'region,channel'.
+        filters: Optional filters. Accepts natural syntax separated by semicolons:
+                 'status = completed', 'status:eq:completed', or 'total_amount > 100'.
+        order_by: Optional ordering, e.g. 'sum_total_amount desc'.
     """
-    measures = [{"field": measure_field, "aggregation": aggregation}]
-    dims = [d.strip() for d in dimensions.split(",") if d.strip()]
+    import re as _re
+    measure_list = []
+    for m in measures.split(","):
+        m = m.strip()
+        match = _re.match(r"(\w+)\((\w+)\)", m)
+        if match:
+            measure_list.append({"field": match.group(2), "aggregation": match.group(1)})
+        else:
+            measure_list.append({"field": m, "aggregation": "sum"})
 
-    filter_list = None
-    if filters:
-        filter_list = []
-        for f in filters.split(";"):
-            parts = [p.strip() for p in f.split(":")]
-            if len(parts) == 3:
-                val = parts[2]
-                try:
-                    val = float(val)
-                except ValueError:
-                    pass
-                filter_list.append({"field": parts[0], "operator": parts[1], "value": val})
+    dims = [d.strip() for d in dimensions.split(",") if d.strip()]
+    filter_list = _parse_filters(filters)
 
     ob = None
-    if order_by_field:
-        ob = [{"field": order_by_field, "direction": order_by_dir}]
+    if order_by and order_by.strip():
+        parts = order_by.strip().rsplit(None, 1)
+        ob_field = parts[0]
+        ob_dir = parts[1] if len(parts) > 1 and parts[1] in ("asc", "desc") else "desc"
+        ob = [{"field": ob_field, "direction": ob_dir}]
 
-    intent = sdol.formulator.aggregate_analysis(
-        entity=entity, measures=measures, dimensions=dims, filters=filter_list, order_by=ob,
-    )
-    frame = asyncio.run(sdol.query(intent))
-
-    results = []
-    for slot in frame.slots:
-        for elem in slot.elements:
-            results.append({
-                "data": elem.data,
-                "source": elem.provenance.source_system,
-                "precision": elem.provenance.precision.value,
-                "trust_score": round(elem.trust.composite, 3),
-            })
-    return json.dumps({"results": results, "data_confidence": sdol.get_epistemic_context()}, indent=2, default=str)
+    try:
+        intent = sdol.formulator.aggregate_analysis(
+            entity=entity, measures=measure_list, dimensions=dims,
+            filters=filter_list, order_by=ob,
+        )
+        frame = asyncio.run(sdol.query(intent))
+        return _format_frame(frame)
+    except Exception as exc:
+        return json.dumps({"error": str(exc), "data_confidence": sdol.get_epistemic_context()})
 
 
 @tool
-def sdol_temporal_trend(entity: str, metric: str, window: str = "last_90d", granularity: str = "1d") -> str:
-    """Analyze temporal trends via SDOL (routes to OLAP with DATE_TRUNC optimizations).
+def sdol_temporal_trend(entity: str, metric: str, window: str = "last_90d", granularity: str = "1M") -> str:
+    """Analyze temporal trends via SDOL (routes to OLAP with DATE_TRUNC).
 
     Args:
-        entity: Table name, e.g. 'sales_transactions'.
-        metric: Metric column, e.g. 'total_amount'.
-        window: Time window — 'last_30d', 'last_90d', 'last_1y'.
-        granularity: Bucketing — '1h', '1d', '1w', '1M'.
+        entity: Table name, e.g. 'sales_transactions' or 'revenue_daily'.
+        metric: Metric column to aggregate, e.g. 'total_amount' or 'total_revenue'.
+        window: Relative time window — 'last_30d', 'last_90d', 'last_1y'.
+        granularity: Time bucket size — '1d' (day), '1w' (week), '1M' (month).
     """
-    intent = sdol.formulator.temporal_trend(
-        entity=entity, metric=metric, window={"relative": window}, granularity=granularity,
-    )
-    frame = asyncio.run(sdol.query(intent))
+    try:
+        intent = sdol.formulator.temporal_trend(
+            entity=entity, metric=metric, window={"relative": window}, granularity=granularity,
+        )
+        frame = asyncio.run(sdol.query(intent))
+        return _format_frame(frame)
+    except Exception as exc:
+        return json.dumps({"error": str(exc), "data_confidence": sdol.get_epistemic_context()})
 
-    results = []
-    for slot in frame.slots:
-        for elem in slot.elements:
-            results.append({
-                "data": elem.data,
-                "source": elem.provenance.source_system,
-                "trust_score": round(elem.trust.composite, 3),
-            })
-    return json.dumps({"results": results, "data_confidence": sdol.get_epistemic_context()}, indent=2, default=str)
+
+@tool
+def sdol_sql(query: str) -> str:
+    """Execute a raw SQL query with SDOL provenance tracking.
+
+    Use this for complex queries that need JOINs across tables, multiple
+    sub-queries, or anything the other SDOL tools cannot express directly.
+
+    Args:
+        query: A complete Spark SQL query using fully-qualified table names.
+    """
+    try:
+        df = spark.sql(query)
+        records = [row.asDict() for row in df.limit(100).collect()]
+        return json.dumps({
+            "results": records,
+            "result_count": len(records),
+            "note": "Raw SQL — no SDOL provenance tracking for this query.",
+            "data_confidence": sdol.get_epistemic_context(),
+        }, indent=2, default=str)
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
 
 
 @tool
@@ -328,7 +395,7 @@ def sdol_data_confidence() -> str:
     return sdol.get_epistemic_context()
 
 
-sdol_tools = [sdol_point_lookup, sdol_aggregate, sdol_temporal_trend, sdol_data_confidence]
+sdol_tools = [sdol_point_lookup, sdol_aggregate, sdol_temporal_trend, sdol_sql, sdol_data_confidence]
 
 # COMMAND ----------
 
@@ -416,14 +483,18 @@ tracks data provenance (source, freshness, consistency), and computes trust scor
 
 {TABLE_SCHEMAS}
 
-Available SDOL tools:
-- `sdol_point_lookup`   — look up a single record by ID  (routes → OLTP / Lakebase)
-- `sdol_aggregate`      — aggregations, counts, top-N    (routes → OLAP / DBSQL)
+Available SDOL tools (choose the best match for each question):
+- `sdol_point_lookup`    — look up a single record by ID  (routes → OLTP / Lakebase)
+- `sdol_aggregate`       — aggregations, counts, top-N    (routes → OLAP / DBSQL)
+    measures format: 'sum(total_amount)' or 'count(order_id), avg(total_amount)'
+    filters format: 'status = completed; region = west'  (semicolon-separated)
 - `sdol_temporal_trend`  — time-series bucketed analysis   (routes → OLAP / DBSQL)
+- `sdol_sql`             — raw SQL for JOINs or complex queries that cross tables
 - `sdol_data_confidence` — overall trust & quality summary
 
 Guidelines:
-- Choose the right SDOL tool for each question type.
+- For questions that require JOINing two tables (e.g. customer details + their orders),
+  use `sdol_sql` with a proper SQL JOIN using fully-qualified table names ({CATALOG}.{SCHEMA}.<table>).
 - Always include data confidence context in your answer — mention source, trust score, and freshness.
 - When trust scores are below 0.7, explicitly flag reduced confidence.
 - When presenting numbers, cite the source system (e.g. DBSQL / Lakebase).

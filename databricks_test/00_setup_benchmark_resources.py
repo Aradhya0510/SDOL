@@ -23,8 +23,8 @@
 
 # COMMAND ----------
 
-CATALOG = "sdol_benchmark"  # TODO: change if needed
-SCHEMA = "data"
+CATALOG = "users"  # TODO: change if needed
+SCHEMA = "aradhya_chouhan"
 USE_EXISTING_CATALOG = False
 
 # COMMAND ----------
@@ -112,7 +112,7 @@ customers_df = (
     .drop("id", "_tr")
 )
 
-customers_df.write.mode("overwrite").saveAsTable(f"{CATALOG}.{SCHEMA}.customers")
+customers_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{CATALOG}.{SCHEMA}.customers")
 print(f"✔ customers: {spark.table(f'{CATALOG}.{SCHEMA}.customers').count()} rows")
 
 # COMMAND ----------

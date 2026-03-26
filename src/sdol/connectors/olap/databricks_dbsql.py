@@ -32,6 +32,7 @@ class DatabricksDBSQLConnector(BaseOLAPConnector):
         available_entities: list[str] | None = None,
         catalog: str | None = None,
         schema: str | None = None,
+        time_column_map: dict[str, str] | None = None,
     ) -> None:
         super().__init__(
             executor=executor,
@@ -41,6 +42,7 @@ class DatabricksDBSQLConnector(BaseOLAPConnector):
         )
         self._catalog = catalog
         self._schema = schema
+        self._time_column_map = time_column_map or {}
 
     @property
     def default_staleness_sec(self) -> float:
@@ -62,8 +64,12 @@ class DatabricksDBSQLConnector(BaseOLAPConnector):
                 params, catalog=self._catalog, schema=self._schema
             )
         if isinstance(params, TemporalTrendIntent):
+            tc = self._time_column_map.get(params.entity, "timestamp")
             return build_dbsql_temporal_query(
-                params, catalog=self._catalog, schema=self._schema
+                params,
+                catalog=self._catalog,
+                schema=self._schema,
+                time_column=tc,
             )
         raise InvalidIntentError(
             "Unexpected intent type in synthesize_query",

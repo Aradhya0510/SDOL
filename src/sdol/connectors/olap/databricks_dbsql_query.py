@@ -29,6 +29,34 @@ class DBSQLQuery:
     schema: str | None
 
 
+import re
+
+_RELATIVE_RE = re.compile(r"^last_(\d+)(h|d|w|M|Q|y)$")
+_UNIT_TO_SQL: dict[str, str] = {
+    "h": "HOUR",
+    "d": "DAY",
+    "w": "WEEK",
+    "M": "MONTH",
+    "Q": "QUARTER",  # mapped to MONTH * 3 below
+    "y": "YEAR",
+}
+
+
+def parse_relative_window(raw: str) -> str:
+    """Convert 'last_90d' → 'INTERVAL 90 DAY', etc.
+
+    Falls back to ``INTERVAL '<raw>'`` so absolute strings like '30 DAY'
+    pass through unchanged.
+    """
+    m = _RELATIVE_RE.match(raw)
+    if m:
+        n, unit = int(m.group(1)), m.group(2)
+        if unit == "Q":
+            return f"INTERVAL {n * 3} MONTH"
+        return f"INTERVAL {n} {_UNIT_TO_SQL[unit]}"
+    return f"INTERVAL {raw}"
+
+
 KNOWN_ROLLUP_GRANULARITIES = {"day", "week", "month", "quarter", "year"}
 
 GRANULARITY_TO_TRUNC: dict[str, str] = {
@@ -158,8 +186,15 @@ def build_dbsql_temporal_query(
     *,
     catalog: str | None = None,
     schema: str | None = None,
+    time_column: str = "timestamp",
 ) -> DBSQLQuery:
-    """Build a temporal trend query targeting Databricks SQL with DATE_TRUNC."""
+    """Build a temporal trend query targeting Databricks SQL with DATE_TRUNC.
+
+    Args:
+        time_column: The column that holds the time dimension for this entity
+                     (e.g. ``order_date``, ``report_date``).  Defaults to
+                     ``timestamp`` for backward compatibility.
+    """
     params: dict[str, Any] = {}
     counter = [0]
     optimizations: list[str] = ["photon_acceleration", "predicate_pushdown"]
@@ -175,7 +210,8 @@ def build_dbsql_temporal_query(
     else:
         table = qualify_table(intent.entity, catalog, schema)
 
-    bucket_expr = f"DATE_TRUNC('{trunc_unit}', timestamp)"
+    tc = time_column
+    bucket_expr = f"DATE_TRUNC('{trunc_unit}', {tc})"
     select_clause = f"{bucket_expr} AS bucket, AVG({intent.metric}) AS {intent.metric}"
 
     where_parts: list[str] = []
@@ -183,16 +219,17 @@ def build_dbsql_temporal_query(
         pname = f"p{counter[0]}"
         params[pname] = intent.window.start
         counter[0] += 1
-        where_parts.append(f"timestamp >= :{pname}")
+        where_parts.append(f"{tc} >= :{pname}")
         uses_delta_data_skipping = True
     if intent.window.end:
         pname = f"p{counter[0]}"
         params[pname] = intent.window.end
         counter[0] += 1
-        where_parts.append(f"timestamp <= :{pname}")
+        where_parts.append(f"{tc} <= :{pname}")
         uses_delta_data_skipping = True
     if intent.window.relative:
-        where_parts.append(f"timestamp >= CURRENT_TIMESTAMP() - INTERVAL {intent.window.relative}")
+        interval_expr = parse_relative_window(intent.window.relative)
+        where_parts.append(f"{tc} >= CURRENT_TIMESTAMP() - {interval_expr}")
         uses_delta_data_skipping = True
 
     if uses_delta_data_skipping:

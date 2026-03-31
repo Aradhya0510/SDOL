@@ -43,10 +43,10 @@ SCHEMA = "aradhya_chouhan"
 
 LLM_ENDPOINT = "databricks-claude-3-7-sonnet"  # TODO: any Foundation Model endpoint
 
-# Path to the SDOL source tree — update for your workspace.
-# Option A: Workspace Repo / Git folder
+# Path to the SDOL project root — update for your workspace.
+# Option A: Workspace Repo / Git folder (add both src/ and project root for extensions)
 # Option B: Uploaded wheel  →  comment out sys.path and %pip install the wheel instead
-SDOL_SRC_PATH = "/Workspace/Users/{user}/SDOL-python/src"  # TODO: update
+SDOL_PROJECT_ROOT = "/Workspace/Users/{user}/SDOL-python"  # TODO: update
 
 # COMMAND ----------
 
@@ -57,18 +57,19 @@ SDOL_SRC_PATH = "/Workspace/Users/{user}/SDOL-python/src"  # TODO: update
 
 import sys, os
 
-# Try importing; fall back to sys.path injection from the configured source path
+# Try importing; fall back to sys.path injection from the configured project root
 try:
     import sdol  # already installed (wheel / pip)
 except ImportError:
-    resolved = SDOL_SRC_PATH.replace("{user}", spark.sql("SELECT current_user()").first()[0])
-    if os.path.isdir(resolved):
-        sys.path.insert(0, resolved)
+    resolved = SDOL_PROJECT_ROOT.replace("{user}", spark.sql("SELECT current_user()").first()[0])
+    src_path = os.path.join(resolved, "src")
+    if os.path.isdir(src_path):
+        sys.path.insert(0, src_path)
         import sdol
-        print(f"Loaded SDOL from {resolved}")
+        print(f"Loaded SDOL from {src_path}")
     else:
         raise ImportError(
-            f"SDOL not found. Either install the wheel or update SDOL_SRC_PATH "
+            f"SDOL not found. Either install the wheel or update SDOL_PROJECT_ROOT "
             f"(tried {resolved})"
         )
 

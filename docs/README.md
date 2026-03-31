@@ -11,7 +11,7 @@ Complete documentation for the Semantic Data Orchestration Layer.
 | **Getting Started** | [getting-started.md](getting-started.md) | Installation, setup, and basic working examples — start here |
 | **Architecture** | [architecture.md](architecture.md) | Detailed system design: nine composable layers, data flow, type system, directory structure, and design principles |
 | **Typed Connectors Guide** | [typed-connectors-guide.md](typed-connectors-guide.md) | Three-tier connector architecture, built-in connectors (OLAP/OLTP/Document), QueryExecutor protocol, building custom connectors, suitability scoring |
-| **Databricks Guide** | [databricks-guide.md](databricks-guide.md) | Databricks-specific integration: DBSQL (Photon/OLAP) and Lakebase (OLTP), Unity Catalog, cross-paradigm queries, writing production QueryExecutors |
+| **Databricks Guide** | [databricks-guide.md](databricks-guide.md) | Databricks-specific integration: DBSQL (Photon/OLAP), Lakebase (OLTP), and Vector Search (Document), Unity Catalog, cross-paradigm queries, writing production QueryExecutors |
 | **Implementation Spec** | [implementation-spec.md](implementation-spec.md) | Original milestone-based specification used to build SDOL — 13 milestones covering project bootstrap through end-to-end integration |
 
 ---
@@ -21,7 +21,7 @@ Complete documentation for the Semantic Data Orchestration Layer.
 1. **[Getting Started](getting-started.md)** — get the project running and understand core concepts
 2. **[Architecture](architecture.md)** — understand how the layers interact and where code lives
 3. **[Typed Connectors Guide](typed-connectors-guide.md)** — learn the connector system and how to extend it
-4. **[Databricks Guide](databricks-guide.md)** — if using Databricks, read this for DBSQL + Lakebase specifics
+4. **[Databricks Guide](databricks-guide.md)** — if using Databricks, read this for DBSQL + Lakebase + Vector Search specifics
 
 The [Implementation Spec](implementation-spec.md) is a reference document — useful for understanding design decisions and original requirements, but not necessary for day-to-day usage.
 

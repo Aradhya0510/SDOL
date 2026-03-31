@@ -55,7 +55,7 @@ SDOL is organized into nine composable layers, each with a single responsibility
 │  Layer 4: Typed Connectors (three-tier)                          │
 │  Foundation: BaseConnector (4-stage pipeline)                    │
 │  Paradigm:   BaseOLAPConnector │ BaseOLTPConnector │ BaseDocConn │
-│  Providers:  Generic/Databricks OLAP │ Generic/Lakebase OLTP    │
+│  Providers:  Generic OLAP/OLTP/Doc (core) + Databricks (extensions) │
 │  CapabilityRegistry (routing + scoring)                          │
 ├──────────────────────────────────────────────────────────────────┤
 │  Layer 5: Context Assembly                                       │
@@ -299,7 +299,7 @@ Connectors follow a three-tier architecture:
 
 1. **Foundation** — `BaseConnector` defines the 4-stage pipeline contract and `QueryExecutor` protocol. These rarely change.
 2. **Paradigm bases** — `BaseOLAPConnector`, `BaseOLTPConnector`, `BaseDocumentConnector` encode what it *means* to be a connector of that paradigm: supported intent types, shared `interpret_intent` validation, shared `normalize_result` with paradigm-appropriate provenance defaults. Providers only override `synthesize_query()` and `get_performance()`.
-3. **Provider extensions** — `GenericOLAPConnector`, `DatabricksDBSQLConnector`, `GenericOLTPConnector`, `DatabricksLakebaseConnector`, `GenericDocumentConnector`. Each lives under its paradigm directory alongside its query builder.
+3. **Provider extensions** — Generic connectors (`GenericOLAPConnector`, `GenericOLTPConnector`, `GenericDocumentConnector`) live in `src/sdol/connectors/` under their paradigm directories. Databricks-specific connectors (`DatabricksDBSQLConnector`, `DatabricksLakebaseConnector`, `DatabricksVectorSearchConnector`) live in `extensions/databricks/` — separated from core to keep `src/` clean as new providers are added.
 
 ### BaseConnector Pipeline (Foundation)
 
@@ -341,11 +341,15 @@ Shared utilities (`OPERATOR_MAP`, `qualify_table`, `extract_entity_keys`) live i
 
 ### Provider Extensions
 
+Provider-specific connectors live in `extensions/` (alongside `src/`, not under it). This keeps the core `src/sdol/` clean — only base classes and generic reference implementations live there.
+
 Adding a new provider (e.g., BigQuery for OLAP, Postgres for OLTP) requires:
-1. One new file under the paradigm directory (e.g., `connectors/olap/bigquery.py`)
+1. One new file under `extensions/<provider>/<paradigm>/` (e.g., `extensions/bigquery/olap/bigquery.py`)
 2. One query builder file with the native query dataclass + builder functions
 3. Subclass the paradigm base, implement `synthesize_query()` + `get_performance()`
 4. Register it — routing, trust scoring, context compilation, and MCP wrapping work automatically
+
+Import path: `sdol.extensions.<provider>.<paradigm>.<module>` (e.g., `sdol.extensions.databricks.olap.dbsql`). All Databricks connectors are also re-exported from `sdol.__init__` for convenience.
 
 ### QueryExecutor Protocol
 
@@ -512,69 +516,77 @@ Different connectors?    → HASH_MATERIALIZE (build on smaller side)
 ## Directory Structure
 
 ```
-src/sdol/
-├── __init__.py                          # public exports
+src/sdol/                                 # Core package — no provider-specific code
+├── __init__.py                           # public exports (re-exports extensions for convenience)
+├── extensions/
+│   ├── __init__.py                       # namespace marker
+│   └── databricks -> ../../../extensions/databricks  # dev symlink
 ├── agent/
-│   ├── agent_sdk.py                     # SDOL class (public API)
-│   └── intent_formulator.py             # intent builders
+│   ├── agent_sdk.py                      # SDOL class (public API)
+│   └── intent_formulator.py              # intent builders
 ├── connectors/
-│   ├── base_connector.py                # BaseConnector ABC (foundation)
-│   ├── capability_registry.py           # routing + scoring (foundation)
-│   ├── executor.py                      # QueryExecutor protocol + mock (foundation)
-│   ├── sql_utils.py                     # shared OPERATOR_MAP, qualify_table, extract_entity_keys
+│   ├── base_connector.py                 # BaseConnector ABC (foundation)
+│   ├── capability_registry.py            # routing + scoring (foundation)
+│   ├── executor.py                       # QueryExecutor protocol + mock (foundation)
+│   ├── sql_utils.py                      # shared OPERATOR_MAP, qualify_table, extract_entity_keys
 │   ├── olap/
-│   │   ├── __init__.py                  # re-exports all OLAP connectors
-│   │   ├── base.py                      # BaseOLAPConnector (paradigm base)
-│   │   ├── generic.py                   # GenericOLAPConnector
-│   │   ├── query.py                     # generic OLAP SQL builder
-│   │   ├── databricks_dbsql.py          # DatabricksDBSQLConnector (provider)
-│   │   └── databricks_dbsql_query.py    # Photon/Delta-optimized SQL builder
+│   │   ├── base.py                       # BaseOLAPConnector (paradigm base)
+│   │   ├── generic.py                    # GenericOLAPConnector
+│   │   └── query.py                      # generic OLAP SQL builder
 │   ├── oltp/
-│   │   ├── __init__.py                  # re-exports all OLTP connectors
-│   │   ├── base.py                      # BaseOLTPConnector (paradigm base)
-│   │   ├── generic.py                   # GenericOLTPConnector
-│   │   ├── query.py                     # generic OLTP SQL builder
-│   │   ├── databricks_lakebase.py       # DatabricksLakebaseConnector (provider)
-│   │   └── databricks_lakebase_query.py # Lakebase row-index-optimized builder
+│   │   ├── base.py                       # BaseOLTPConnector (paradigm base)
+│   │   ├── generic.py                    # GenericOLTPConnector
+│   │   └── query.py                      # generic OLTP SQL builder
 │   └── document/
-│       ├── __init__.py                  # re-exports all document connectors
-│       ├── base.py                      # BaseDocumentConnector (paradigm base)
-│       ├── generic.py                   # GenericDocumentConnector
-│       └── query.py                     # hybrid retrieval builder
+│       ├── base.py                       # BaseDocumentConnector (paradigm base)
+│       ├── generic.py                    # GenericDocumentConnector
+│       └── query.py                      # hybrid retrieval builder
 ├── core/
 │   ├── context/
-│   │   ├── context_compiler.py          # assembles ContextFrame
-│   │   ├── conflict_detector.py         # cross-source conflict detection
-│   │   ├── conflict_resolver.py         # heuristic resolution
-│   │   └── typed_slot.py               # interpretation notes per slot type
+│   │   ├── context_compiler.py           # assembles ContextFrame
+│   │   ├── conflict_detector.py          # cross-source conflict detection
+│   │   ├── conflict_resolver.py          # heuristic resolution
+│   │   └── typed_slot.py                # interpretation notes per slot type
 │   ├── epistemic/
-│   │   └── epistemic_tracker.py         # session-level confidence tracking
+│   │   └── epistemic_tracker.py          # session-level confidence tracking
 │   ├── provenance/
-│   │   ├── envelope.py                  # ProvenanceEnvelope factory functions
-│   │   └── trust_scorer.py              # 4-dimension trust scoring
+│   │   ├── envelope.py                   # ProvenanceEnvelope factory functions
+│   │   └── trust_scorer.py               # 4-dimension trust scoring
 │   └── router/
-│       ├── semantic_router.py           # main orchestrator
-│       ├── query_planner.py             # execution plan builder
-│       ├── intent_decomposer.py         # composite flattener
-│       ├── cost_estimator.py            # latency/token estimation
-│       └── join_optimizer.py            # cross-source join strategies
+│       ├── semantic_router.py            # main orchestrator
+│       ├── query_planner.py              # execution plan builder
+│       ├── intent_decomposer.py          # composite flattener
+│       ├── cost_estimator.py             # latency/token estimation
+│       └── join_optimizer.py             # cross-source join strategies
 ├── mcp/
-│   ├── mcp_adapter.py                   # MCP server management
-│   ├── response_wrapper.py              # MCP → ProvenanceEnvelope
-│   └── protocol_extensions.py           # SDOL metadata envelope for MCP
+│   ├── mcp_adapter.py                    # MCP server management
+│   ├── response_wrapper.py               # MCP → ProvenanceEnvelope
+│   └── protocol_extensions.py            # SDOL metadata envelope for MCP
 ├── types/
-│   ├── __init__.py                      # type re-exports
-│   ├── intent.py                        # 8 intent types + discriminated union
-│   ├── provenance.py                    # provenance enums + envelope + trust
-│   ├── context.py                       # context frame, slots, conflicts
-│   ├── capability.py                    # connector capability declarations
-│   ├── connector.py                     # connector result + health types
-│   ├── errors.py                        # typed error hierarchy
-│   └── router.py                        # execution plan + step types
+│   ├── intent.py                         # 8 intent types + discriminated union
+│   ├── provenance.py                     # provenance enums + envelope + trust
+│   ├── context.py                        # context frame, slots, conflicts
+│   ├── capability.py                     # connector capability declarations
+│   ├── connector.py                      # connector result + health types
+│   ├── errors.py                         # typed error hierarchy
+│   └── router.py                         # execution plan + step types
 └── utils/
-    ├── hashing.py                       # deterministic hashing for entity resolution
-    ├── timer.py                         # execution timer context manager
-    └── logger.py                        # structured logger
+    ├── hashing.py                        # deterministic hashing
+    ├── timer.py                          # execution timer context manager
+    └── logger.py                         # structured logger
+
+extensions/                               # Provider extensions — separate from core
+└── databricks/
+    ├── __init__.py                       # Databricks provider package
+    ├── olap/
+    │   ├── dbsql.py                      # DatabricksDBSQLConnector
+    │   └── dbsql_query.py                # Photon/Delta-optimized SQL builder
+    ├── oltp/
+    │   ├── lakebase.py                   # DatabricksLakebaseConnector
+    │   └── lakebase_query.py             # Lakebase row-index-optimized builder
+    └── document/
+        ├── vector_search.py              # DatabricksVectorSearchConnector
+        └── vector_search_query.py        # VS API query builder (ANN / HYBRID)
 ```
 
 ---

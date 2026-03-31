@@ -6,15 +6,16 @@ from typing import Any
 
 from sdol.connectors.executor import QueryExecutor
 from sdol.connectors.oltp.base import BaseOLTPConnector
-from sdol.connectors.oltp.databricks_lakebase_query import (
-    LakebaseQuery,
-    build_lakebase_point_lookup,
-    build_lakebase_simple_aggregate,
-)
 from sdol.types.capability import ConnectorPerformance
 from sdol.types.errors import InvalidIntentError
 from sdol.types.intent import AggregateAnalysisIntent, PointLookupIntent
 from sdol.types.provenance import ConsistencyGuarantee
+
+from .lakebase_query import (
+    LakebaseQuery,
+    build_lakebase_point_lookup,
+    build_lakebase_simple_aggregate,
+)
 
 
 class DatabricksLakebaseConnector(BaseOLTPConnector):

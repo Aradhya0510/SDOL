@@ -1,15 +1,16 @@
 # Databricks Integration Guide
 
-SDOL ships with two Databricks-native typed connectors that let your agent query the Databricks Lakehouse without writing SQL or managing connections — while automatically tracking provenance, consistency, and trust.
+SDOL ships with three Databricks-native typed connectors that let your agent query the Databricks Lakehouse without writing SQL or managing connections — while automatically tracking provenance, consistency, and trust.
 
 | Connector | Paradigm | Backend | Intent Types | Latency Profile |
 |-----------|----------|---------|-------------|-----------------|
 | `DatabricksDBSQLConnector` | OLAP | SQL Warehouse (Photon) | `aggregate_analysis`, `temporal_trend` | ~300ms |
 | `DatabricksLakebaseConnector` | OLTP | Lakebase | `point_lookup`, `aggregate_analysis` | ~10ms |
+| `DatabricksVectorSearchConnector` | Document | Vector Search | `semantic_search` | ~150ms |
 
-Both support **Unity Catalog** three-level namespacing and generate Databricks-native SQL with platform-specific optimizations.
+All three support **Unity Catalog** three-level namespacing and generate Databricks-native queries with platform-specific optimizations.
 
-These are **provider extensions** of the paradigm base classes — `DatabricksDBSQLConnector` extends `BaseOLAPConnector` and `DatabricksLakebaseConnector` extends `BaseOLTPConnector`. They live under their paradigm directories (`connectors/olap/` and `connectors/oltp/`) rather than a vendor-specific directory.
+These are **provider extensions** of the paradigm base classes and live in `extensions/databricks/` — separated from core `src/sdol/` to keep the core package clean. Import them via `sdol.extensions.databricks.*` or directly from `sdol` (re-exported for convenience).
 
 ---
 
@@ -24,57 +25,61 @@ These are **provider extensions** of the paradigm base classes — `DatabricksDB
    - [Point Lookup](#point-lookup)
    - [Batch Lookups](#batch-lookups)
    - [Simple Aggregates](#simple-aggregates)
-4. [Unity Catalog Integration](#unity-catalog-integration)
-5. [Cross-Paradigm Queries: DBSQL + Lakebase](#cross-paradigm-queries-dbsql--lakebase)
-6. [Writing a Custom QueryExecutor](#writing-a-custom-queryexecutor)
+4. [Vector Search Connector (Document)](#vector-search-connector-document)
+   - [Semantic Search](#semantic-search)
+   - [VS Query Builder Features](#vs-query-builder-features)
+5. [Unity Catalog Integration](#unity-catalog-integration)
+6. [Cross-Paradigm Queries: DBSQL + Lakebase + Vector Search](#cross-paradigm-queries-dbsql--lakebase--vector-search)
+7. [Writing a Custom QueryExecutor](#writing-a-custom-queryexecutor)
    - [DBSQL Executor](#dbsql-executor-via-databricks-sql-connector)
    - [Lakebase Executor](#lakebase-executor-via-rest-api)
+   - [Vector Search Executor](#vector-search-executor)
    - [Wiring Executors to Connectors](#wiring-executors-to-connectors)
-7. [Provenance and Trust](#provenance-and-trust)
-8. [Optimization Details](#optimization-details)
+8. [Provenance and Trust](#provenance-and-trust)
+9. [Optimization Details](#optimization-details)
 
 ---
 
 ## Architecture Overview
 
 ```
-                       ┌─────────────────────────┐
-                       │      Agent / LLM         │
-                       └────────────┬─────────────┘
-                                    │ Intent
-                       ┌────────────▼─────────────┐
-                       │         SDOL SDK          │
-                       │   (IntentFormulator +     │
-                       │    SemanticRouter)         │
-                       └────────────┬─────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    ▼                               ▼
-        ┌───────────────────┐           ┌───────────────────┐
-        │  DatabricksDBSQL  │           │ DatabricksLakebase│
-        │  Connector (OLAP) │           │ Connector (OLTP)  │
-        ├───────────────────┤           ├───────────────────┤
-        │ • Photon accel.   │           │ • Row-level index │
-        │ • Delta skipping  │           │ • Sub-10ms lookup │
-        │ • DATE_TRUNC      │           │ • Batch support   │
-        │ • Named params    │           │ • Named params    │
-        └────────┬──────────┘           └────────┬──────────┘
-                 │                                │
-                 ▼                                ▼
-        ┌────────────────┐              ┌────────────────┐
-        │ SQL Warehouse  │              │   Lakebase     │
-        │ (Databricks)   │              │  (Databricks)  │
-        └────────────────┘              └────────────────┘
-                 │                                │
-                 └────────────┬───────────────────┘
-                              ▼
-                     ┌────────────────┐
-                     │   Delta Lake   │
-                     │ (Unity Catalog)│
-                     └────────────────┘
+                          ┌─────────────────────────┐
+                          │      Agent / LLM         │
+                          └────────────┬─────────────┘
+                                       │ Intent
+                          ┌────────────▼─────────────┐
+                          │         SDOL SDK          │
+                          │   (IntentFormulator +     │
+                          │    SemanticRouter)         │
+                          └────────────┬─────────────┘
+                                       │
+              ┌────────────────────────┼─────────────────────────┐
+              ▼                        ▼                         ▼
+  ┌───────────────────┐   ┌───────────────────┐   ┌───────────────────────┐
+  │  DatabricksDBSQL  │   │ DatabricksLakebase│   │ DatabricksVectorSearch│
+  │  Connector (OLAP) │   │ Connector (OLTP)  │   │ Connector (Document)  │
+  ├───────────────────┤   ├───────────────────┤   ├───────────────────────┤
+  │ • Photon accel.   │   │ • Row-level index │   │ • ANN / HYBRID search │
+  │ • Delta skipping  │   │ • Sub-10ms lookup │   │ • Delta Sync indices  │
+  │ • DATE_TRUNC      │   │ • Batch support   │   │ • Metadata filters    │
+  │ • Named params    │   │ • Named params    │   │ • Score threshold     │
+  └────────┬──────────┘   └────────┬──────────┘   └──────────┬────────────┘
+           │                       │                          │
+           ▼                       ▼                          ▼
+  ┌────────────────┐     ┌────────────────┐        ┌────────────────────┐
+  │ SQL Warehouse  │     │   Lakebase     │        │   Vector Search    │
+  │ (Databricks)   │     │  (Databricks)  │        │   (Databricks)     │
+  └────────────────┘     └────────────────┘        └────────────────────┘
+           │                       │                          │
+           └───────────────┬───────┴──────────────────────────┘
+                           ▼
+                  ┌────────────────┐
+                  │   Delta Lake   │
+                  │ (Unity Catalog)│
+                  └────────────────┘
 ```
 
-The Semantic Router automatically picks the right connector for each intent. `aggregate_analysis` and `temporal_trend` route to DBSQL; `point_lookup` routes to Lakebase. When you issue a composite query spanning both paradigms, each sub-intent goes to the best-suited backend.
+The Semantic Router automatically picks the right connector for each intent. `aggregate_analysis` and `temporal_trend` route to DBSQL; `point_lookup` routes to Lakebase; `semantic_search` routes to Vector Search. When you issue a composite query spanning all three paradigms, each sub-intent goes to the best-suited backend.
 
 ---
 
@@ -256,7 +261,7 @@ Query builder optimizations: `lakebase_row_index`, `column_pruning`, `parameteri
 The query builder supports batch lookups for multi-key retrieval:
 
 ```python
-from sdol.connectors.oltp.databricks_lakebase_query import build_lakebase_batch_lookup
+from sdol.extensions.databricks.oltp.lakebase_query import build_lakebase_batch_lookup
 
 query = build_lakebase_batch_lookup(
     entity="customers",
@@ -290,9 +295,81 @@ intent = sdol.formulator.aggregate_analysis(
 
 ---
 
+## Vector Search Connector (Document)
+
+`DatabricksVectorSearchConnector` targets Databricks Vector Search for semantic/similarity queries over managed vector indices backed by Delta tables.
+
+### Semantic Search
+
+```python
+import asyncio
+from sdol import (
+    SDOL, CapabilityRegistry, ContextCompiler,
+    DatabricksVectorSearchConnector, SemanticRouter, TrustScorer,
+)
+from sdol.connectors.executor import MockQueryExecutor
+from sdol.core.router.cost_estimator import CostEstimator
+from sdol.core.router.intent_decomposer import IntentDecomposer
+from sdol.core.router.query_planner import QueryPlanner
+
+async def main():
+    executor = MockQueryExecutor(records=[
+        {"log_id": "LOG-001", "description": "Overheating event at 120°C", "score": 0.92},
+        {"log_id": "LOG-042", "description": "Thermal shutdown triggered", "score": 0.87},
+    ])
+
+    vs = DatabricksVectorSearchConnector(
+        executor=executor,
+        connector_id="databricks.vs",
+        source_system="databricks.vector_search.maintenance",
+        available_entities=["maintenance_logs"],
+        catalog="prod_catalog",
+        schema="fleet",
+        index_name="prod_catalog.fleet.maintenance_logs_index",
+    )
+
+    registry = CapabilityRegistry()
+    registry.register(vs)
+
+    compiler = ContextCompiler(TrustScorer())
+    planner = QueryPlanner(registry, IntentDecomposer(), CostEstimator())
+    router = SemanticRouter(planner, compiler, registry)
+    sdol = SDOL(router)
+
+    intent = sdol.formulator.semantic_search(
+        query="overheating failure high temperature",
+        collection="maintenance_logs",
+        filters=[{"field": "severity", "operator": "eq", "value": "critical"}],
+        max_results=10,
+    )
+    frame = await sdol.query(intent)
+
+    for slot in frame.slots:
+        for elem in slot.elements:
+            print(f"  {elem.data}")
+            print(f"    Trust: {elem.trust.composite:.2f}")
+            print(f"    Retrieval: {elem.provenance.retrieval_method}")
+
+asyncio.run(main())
+```
+
+### VS Query Builder Features
+
+The `DatabricksVSQuery` dataclass tracks query configuration and optimizations:
+
+| Field | Meaning |
+|-------|---------|
+| `query_type` | `ANN` (pure vector) or `HYBRID` (vector + keyword) — derived from `hybrid_weight` |
+| `filters_json` | SQL-style filter string for metadata filtering (e.g., `"severity = 'critical'"`) |
+| `score_threshold` | Minimum similarity score for results (default 0.3) |
+| `index_name` | Fully qualified Unity Catalog index name |
+| `optimizations` | `hybrid_retrieval`, `ann_search`, `metadata_filter_pushdown`, `reranking`, `delta_sync_auto_update` |
+
+---
+
 ## Unity Catalog Integration
 
-Both connectors accept `catalog` and `schema` at construction time for Unity Catalog three-level namespacing:
+All three connectors accept `catalog` and `schema` at construction time for Unity Catalog three-level namespacing:
 
 ```python
 dbsql = DatabricksDBSQLConnector(
@@ -308,9 +385,17 @@ lakebase = DatabricksLakebaseConnector(
     schema="serving",
     available_entities=["customers", "products"],
 )
+
+vs = DatabricksVectorSearchConnector(
+    executor=executor,
+    catalog="prod_catalog",
+    schema="ml",
+    index_name="prod_catalog.ml.kb_index",
+    available_entities=["knowledge_base"],
+)
 ```
 
-All generated queries use fully-qualified table names:
+All generated queries use fully-qualified names:
 
 ```sql
 -- DBSQL
@@ -318,15 +403,17 @@ SELECT region, SUM(revenue) AS sum_revenue FROM prod_catalog.analytics.orders ..
 
 -- Lakebase
 SELECT name, tier FROM prod_catalog.serving.customers ...
+
+-- Vector Search → index_name: prod_catalog.ml.kb_index
 ```
 
-If `catalog` and `schema` are omitted, queries use bare table names — useful when the default catalog/schema is set at the connection level.
+If `catalog` and `schema` are omitted, queries use bare table/index names — useful when the default catalog/schema is set at the connection level.
 
 ---
 
-## Cross-Paradigm Queries: DBSQL + Lakebase
+## Cross-Paradigm Queries: DBSQL + Lakebase + Vector Search
 
-Register both connectors and let SDOL's Semantic Router handle intent routing automatically.
+Register all three connectors and let SDOL's Semantic Router handle intent routing automatically.
 
 ```python
 import asyncio
@@ -494,6 +581,35 @@ class DatabricksLakebaseExecutor:
             }
 ```
 
+### Vector Search Executor
+
+```python
+from databricks.vector_search.client import VectorSearchClient
+
+class DatabricksVectorSearchExecutor:
+    def __init__(self, endpoint_name: str, index_name: str) -> None:
+        self._index = VectorSearchClient().get_index(
+            endpoint_name=endpoint_name, index_name=index_name,
+        )
+
+    async def execute(self, query) -> dict:
+        kwargs = {
+            "query_text": query.query_text,
+            "columns": query.columns or ["id", "text", "metadata"],
+            "num_results": query.num_results,
+        }
+        if query.filters_json:
+            kwargs["filters"] = query.filters_json
+        results = self._index.similarity_search(**kwargs)
+        columns = [c["name"] for c in results.get("manifest", {}).get("columns", [])]
+        data_array = results.get("result", {}).get("data_array", [])
+        records = [dict(zip(columns, row)) for row in data_array]
+        return {
+            "records": records,
+            "meta": {"native_query": query.query_text, "total_available": len(records)},
+        }
+```
+
 ### Wiring Executors to Connectors
 
 ```python
@@ -525,14 +641,14 @@ lakebase = DatabricksLakebaseConnector(
 
 Every result from a Databricks connector carries full provenance metadata that feeds into trust scoring and epistemic tracking.
 
-| Dimension | DBSQL (OLAP) | Lakebase (OLTP) |
-|-----------|-------------|----------------|
-| **Source System** | `databricks.sql_warehouse` | `databricks.lakebase` |
-| **Retrieval Method** | `computed_aggregate` | `direct_query` / `computed_aggregate` |
-| **Consistency** | `strong` | `read_committed` |
-| **Precision** | `exact_aggregate` | `exact` (lookup) / `exact_aggregate` |
-| **Staleness Window** | 600s | 30s |
-| **Max Cardinality** | 10,000,000 | 10,000 |
+| Dimension | DBSQL (OLAP) | Lakebase (OLTP) | Vector Search (Document) |
+|-----------|-------------|----------------|--------------------------|
+| **Source System** | `databricks.sql_warehouse` | `databricks.lakebase` | `databricks.vector_search` |
+| **Retrieval Method** | `computed_aggregate` | `direct_query` / `computed_aggregate` | `vector_similarity` |
+| **Consistency** | `strong` | `read_committed` | `eventual` |
+| **Precision** | `exact_aggregate` | `exact` (lookup) / `exact_aggregate` | `similarity_ranked` |
+| **Staleness Window** | 600s | 30s | 180s |
+| **Max Cardinality** | 10,000,000 | 10,000 | 1,000 |
 
 Configure trust scoring authority for your Databricks environments:
 
@@ -570,3 +686,13 @@ The `DBSQLQuery` dataclass tracks which optimizations were applied:
 | `uses_row_index` | Point lookup uses Lakebase's automatic row-level index |
 | `is_batch` | Multi-key IN query for batch lookups |
 | `optimizations` | `lakebase_row_index`, `parameterized_query`, `column_pruning`, `batch_lookup`, `filter_pushdown` |
+
+### Vector Search Query Builder (`DatabricksVSQuery`)
+
+| Field | Meaning |
+|-------|---------|
+| `query_type` | `ANN` (approximate nearest neighbor) or `HYBRID` (vector + keyword) |
+| `index_name` | Fully qualified Unity Catalog index name |
+| `filters_json` | SQL-style metadata filter string (e.g., `"category = 'maintenance'"`) |
+| `score_threshold` | Minimum similarity score cutoff (default 0.3) |
+| `optimizations` | `hybrid_retrieval` / `ann_search`, `metadata_filter_pushdown`, `reranking`, `delta_sync_auto_update` |

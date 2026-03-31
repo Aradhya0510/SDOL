@@ -2,8 +2,8 @@
 
 import pytest
 
-from sdol.connectors.olap.databricks_dbsql import DatabricksDBSQLConnector
-from sdol.connectors.olap.databricks_dbsql_query import (
+from sdol.extensions.databricks.olap.dbsql import DatabricksDBSQLConnector
+from sdol.extensions.databricks.olap.dbsql_query import (
     build_dbsql_aggregate_query,
     build_dbsql_temporal_query,
     parse_relative_window,

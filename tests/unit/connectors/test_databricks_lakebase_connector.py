@@ -2,8 +2,8 @@
 
 import pytest
 
-from sdol.connectors.oltp.databricks_lakebase import DatabricksLakebaseConnector
-from sdol.connectors.oltp.databricks_lakebase_query import (
+from sdol.extensions.databricks.oltp.lakebase import DatabricksLakebaseConnector
+from sdol.extensions.databricks.oltp.lakebase_query import (
     build_lakebase_batch_lookup,
     build_lakebase_point_lookup,
     build_lakebase_simple_aggregate,

@@ -53,7 +53,7 @@ SDOL introduces a semantic layer that:
 │              BaseOLAP BaseOLTP BaseDoc  │  (shared logic)            │
 │               ┌──┴──┐ ┌──┴──┐   │      │                            │
 │               ▼     ▼ ▼     ▼   ▼      │  Provider Extensions       │
-│           Generic DBSQL Generic Lakebase Generic                     │
+│           Generic DBSQL Generic Lakebase Generic DatabricksVS        │
 │            OLAP       OLTP              Document                     │
 │               │     │ │     │   │                                    │
 │               ▼     ▼ ▼     ▼   ▼                                    │
@@ -66,7 +66,7 @@ SDOL introduces a semantic layer that:
 Each layer is independent and composable:
 - **Intent layer** — Pydantic v2 models with discriminated unions, validated at construction time
 - **Router layer** — decomposes composites, plans execution topology, estimates cost, routes to connectors
-- **Connector layer** — three-tier model: foundation (`BaseConnector`), paradigm bases (`BaseOLAPConnector`, `BaseOLTPConnector`, `BaseDocumentConnector`), and provider extensions with pluggable executors
+- **Connector layer** — three-tier model: foundation (`BaseConnector`), paradigm bases (`BaseOLAPConnector`, `BaseOLTPConnector`, `BaseDocumentConnector`), and provider extensions (in `extensions/`) with pluggable executors
 - **Context layer** — assembles typed slots, detects cross-source conflicts, resolves via heuristics
 - **Epistemic layer** — aggregates trust signals into an LLM-injectable prompt
 
@@ -80,7 +80,7 @@ For the full technical deep-dive, see [Architecture](docs/architecture.md).
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-python -m pytest tests/ -v   # 226 tests
+python -m pytest tests/ -v   # 254 tests
 ```
 
 ```python
@@ -121,13 +121,16 @@ asyncio.run(main())
 
 Connectors follow a three-tier architecture: **Foundation** (`BaseConnector`) → **Paradigm bases** (`BaseOLAPConnector`, `BaseOLTPConnector`, `BaseDocumentConnector`) → **Provider extensions**.
 
-| Paradigm | Base Class | Provider | Class | Intent Types |
-|----------|-----------|----------|-------|-------------|
-| OLAP | `BaseOLAPConnector` | Generic (Snowflake, etc.) | `GenericOLAPConnector` | `aggregate_analysis`, `temporal_trend` |
-| OLAP | `BaseOLAPConnector` | Databricks SQL Warehouse | `DatabricksDBSQLConnector` | `aggregate_analysis`, `temporal_trend` |
-| OLTP | `BaseOLTPConnector` | Generic (PostgreSQL, etc.) | `GenericOLTPConnector` | `point_lookup`, `aggregate_analysis` |
-| OLTP | `BaseOLTPConnector` | Databricks Lakebase | `DatabricksLakebaseConnector` | `point_lookup`, `aggregate_analysis` |
-| Document | `BaseDocumentConnector` | Generic (Pinecone, etc.) | `GenericDocumentConnector` | `semantic_search` |
+Core paradigm bases and generic connectors live in `src/sdol/connectors/`. Provider-specific extensions (Databricks) live in `extensions/databricks/` — keeping the core clean and unchanged as new providers are added.
+
+| Paradigm | Base Class | Provider | Class | Location | Intent Types |
+|----------|-----------|----------|-------|----------|-------------|
+| OLAP | `BaseOLAPConnector` | Generic (Snowflake, etc.) | `GenericOLAPConnector` | `src/sdol/connectors/olap/` | `aggregate_analysis`, `temporal_trend` |
+| OLAP | `BaseOLAPConnector` | Databricks SQL Warehouse | `DatabricksDBSQLConnector` | `extensions/databricks/olap/` | `aggregate_analysis`, `temporal_trend` |
+| OLTP | `BaseOLTPConnector` | Generic (PostgreSQL, etc.) | `GenericOLTPConnector` | `src/sdol/connectors/oltp/` | `point_lookup`, `aggregate_analysis` |
+| OLTP | `BaseOLTPConnector` | Databricks Lakebase | `DatabricksLakebaseConnector` | `extensions/databricks/oltp/` | `point_lookup`, `aggregate_analysis` |
+| Document | `BaseDocumentConnector` | Generic (Pinecone, etc.) | `GenericDocumentConnector` | `src/sdol/connectors/document/` | `semantic_search` |
+| Document | `BaseDocumentConnector` | Databricks Vector Search | `DatabricksVectorSearchConnector` | `extensions/databricks/document/` | `semantic_search` |
 
 All connectors use the `QueryExecutor` protocol — swap `MockQueryExecutor` for a real implementation to connect to production databases. To add a new provider, subclass the appropriate paradigm base and implement only `synthesize_query()` + `get_performance()`.
 
@@ -156,7 +159,7 @@ All documentation lives in the [`docs/`](docs/) directory. See the [documentatio
 | [Getting Started](docs/getting-started.md) | Installation, setup, and basic working examples |
 | [Architecture](docs/architecture.md) | Detailed system design — layers, data flow, type system |
 | [Typed Connectors Guide](docs/typed-connectors-guide.md) | Using built-in connectors and building custom ones |
-| [Databricks Guide](docs/databricks-guide.md) | DBSQL and Lakebase integration with Unity Catalog |
+| [Databricks Guide](docs/databricks-guide.md) | DBSQL, Lakebase, and Vector Search integration with Unity Catalog |
 | [Implementation Spec](docs/implementation-spec.md) | Original milestone-based implementation specification |
 
 ---
@@ -173,8 +176,9 @@ python examples/with_mcp_server.py      # MCP adapter integration
 
 ## Project Stats
 
-- 49 Python source files in `src/sdol/`
-- 24 test files, 226 tests passing
+- 58 Python source files in `src/sdol/` (core only, no provider code)
+- 10 Python source files in `extensions/databricks/`
+- 23 test files, 254 tests passing
 - 3 example scripts
 - 5 benchmark scripts in `databricks_test/`
 - Zero external runtime dependencies beyond Pydantic v2

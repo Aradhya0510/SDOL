@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,15 +30,13 @@ class DBSQLQuery:
     schema: str | None
 
 
-import re
-
 _RELATIVE_RE = re.compile(r"^last_(\d+)(h|d|w|M|Q|y)$")
 _UNIT_TO_SQL: dict[str, str] = {
     "h": "HOUR",
     "d": "DAY",
     "w": "WEEK",
     "M": "MONTH",
-    "Q": "QUARTER",  # mapped to MONTH * 3 below
+    "Q": "QUARTER",
     "y": "YEAR",
 }
 

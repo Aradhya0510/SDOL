@@ -49,16 +49,19 @@ Connectors are organized in three layers:
 │  Shared: interpret_intent, normalize_result, capabilities   │
 ├────────────────────────────────────────────────────────────┤
 │  Layer 3: Provider Extensions (highly extensible)           │
-│  GenericOLAP, DatabricksDBSQL, GenericOLTP, Lakebase, etc.  │
+│  Core: GenericOLAP, GenericOLTP, GenericDocument (src/)     │
+│  Databricks: DBSQL, Lakebase, VectorSearch (extensions/)   │
 │  Only implements: synthesize_query + get_performance        │
 └────────────────────────────────────────────────────────────┘
 ```
 
 **Adding a new provider** (e.g., BigQuery OLAP, Postgres OLTP) requires:
-1. One new file under the paradigm directory
+1. One new file under `extensions/<provider>/<paradigm>/`
 2. One query builder with native query dataclass + builder functions
 3. Subclass the paradigm base, implement `synthesize_query()` + `get_performance()`
 4. Register it — routing, trust scoring, and context compilation work automatically
+
+Provider extensions live in `extensions/` alongside `src/`, keeping core clean. Import path: `sdol.extensions.<provider>.<paradigm>.<module>`.
 
 ---
 
@@ -156,18 +159,30 @@ See [Databricks Guide](databricks-guide.md) for full Lakebase details.
 | Provider | Class | Default Source | Staleness | Special Features |
 |----------|-------|---------------|-----------|-----------------|
 | Generic | `GenericDocumentConnector` | `pinecone.vectors` | 300s | Hybrid retrieval (vector + keyword), reranking, score-based truncation |
+| Databricks Vector Search | `DatabricksVectorSearchConnector` | `databricks.vector_search` | 180s | Unity Catalog, ANN/HYBRID search, Delta Sync auto-update, metadata filter pushdown |
 
 ```python
-from sdol import GenericDocumentConnector
+from sdol import GenericDocumentConnector, DatabricksVectorSearchConnector
 from sdol.connectors.executor import MockQueryExecutor
 
-connector = GenericDocumentConnector(
+generic = GenericDocumentConnector(
     executor=MockQueryExecutor(records=[...]),
     connector_id="doc.pinecone",
     source_system="pinecone.vectors",
     available_entities=["knowledge_base"],
 )
+
+databricks_vs = DatabricksVectorSearchConnector(
+    executor=MockQueryExecutor(records=[...]),
+    connector_id="databricks.vs",
+    catalog="prod_catalog",
+    schema="ml",
+    index_name="prod_catalog.ml.kb_index",
+    available_entities=["knowledge_base"],
+)
 ```
+
+See [Databricks Guide](databricks-guide.md) for full Vector Search details.
 
 ---
 

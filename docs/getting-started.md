@@ -5,7 +5,7 @@ This guide covers installation, setup, and basic working examples to get you up 
 For deeper topics, see:
 - [Architecture](architecture.md) — detailed system design
 - [Typed Connectors Guide](typed-connectors-guide.md) — connector usage and building custom connectors
-- [Databricks Guide](databricks-guide.md) — Databricks-specific integration via DBSQL and Lakebase
+- [Databricks Guide](databricks-guide.md) — Databricks-specific integration via DBSQL, Lakebase, and Vector Search
 
 ---
 
@@ -31,7 +31,7 @@ Verify everything works:
 python -m pytest tests/ -v
 ```
 
-You should see all 226 tests passing.
+You should see all 254 tests passing.
 
 ---
 
@@ -314,4 +314,4 @@ python examples/with_mcp_server.py      # MCP adapter integration
 
 - [Architecture](architecture.md) — understand how the layers interact
 - [Typed Connectors Guide](typed-connectors-guide.md) — use built-in connectors or build your own
-- [Databricks Guide](databricks-guide.md) — DBSQL and Lakebase integration
+- [Databricks Guide](databricks-guide.md) — DBSQL, Lakebase, and Vector Search integration

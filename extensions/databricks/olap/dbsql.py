@@ -6,15 +6,16 @@ from typing import Any
 
 from sdol.connectors.executor import QueryExecutor
 from sdol.connectors.olap.base import BaseOLAPConnector
-from sdol.connectors.olap.databricks_dbsql_query import (
-    DBSQLQuery,
-    build_dbsql_aggregate_query,
-    build_dbsql_temporal_query,
-)
 from sdol.types.capability import ConnectorPerformance
 from sdol.types.errors import InvalidIntentError
 from sdol.types.intent import AggregateAnalysisIntent, TemporalTrendIntent
 from sdol.types.provenance import ConsistencyGuarantee
+
+from .dbsql_query import (
+    DBSQLQuery,
+    build_dbsql_aggregate_query,
+    build_dbsql_temporal_query,
+)
 
 
 class DatabricksDBSQLConnector(BaseOLAPConnector):

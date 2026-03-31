@@ -32,7 +32,7 @@ SCHEMA = "fleet"
 
 LLM_ENDPOINT = "databricks-claude-3-7-sonnet"
 
-SDOL_SRC_PATH = "/Workspace/Users/{user}/SDOL-python/src"
+SDOL_PROJECT_ROOT = "/Workspace/Users/{user}/SDOL-python"
 
 VS_ENDPOINT_NAME = "sdol_fleet_vs"
 VS_INDEX_NAME = f"{CATALOG}.{SCHEMA}.maintenance_logs_index"
@@ -49,11 +49,12 @@ import sys, os
 try:
     import sdol
 except ImportError:
-    resolved = SDOL_SRC_PATH.replace("{user}", spark.sql("SELECT current_user()").first()[0])
-    if os.path.isdir(resolved):
-        sys.path.insert(0, resolved)
+    resolved = SDOL_PROJECT_ROOT.replace("{user}", spark.sql("SELECT current_user()").first()[0])
+    src_path = os.path.join(resolved, "src")
+    if os.path.isdir(src_path):
+        sys.path.insert(0, src_path)
         import sdol
-        print(f"Loaded SDOL from {resolved}")
+        print(f"Loaded SDOL from {src_path}")
     else:
         raise ImportError(f"SDOL not found at {resolved}")
 
@@ -64,10 +65,10 @@ print(f"SDOL loaded — {sdol.__all__[:5]}...")
 # MAGIC %md
 # MAGIC ## Initialize the SDOL Pipeline
 # MAGIC
-# MAGIC Three connectors spanning three paradigms:
+# MAGIC Three Databricks-native connectors spanning three paradigms:
 # MAGIC - **OLTP** (Lakebase) → `fleet_machines` — strong consistency, 30s staleness
 # MAGIC - **OLAP** (DBSQL) → `telemetry_readings`, `telemetry_daily` — **eventual** consistency, 900s staleness
-# MAGIC - **Document** (Vector Search) → `maintenance_logs` — eventual consistency, 300s staleness
+# MAGIC - **Document** (Vector Search) → `maintenance_logs` — Databricks VS connector, eventual consistency, 180s staleness
 
 # COMMAND ----------
 
@@ -80,7 +81,7 @@ from sdol import (
     ContextCompiler,
     DatabricksDBSQLConnector,
     DatabricksLakebaseConnector,
-    GenericDocumentConnector,
+    DatabricksVectorSearchConnector,
     SemanticRouter,
     TrustScorer,
 )
@@ -108,7 +109,11 @@ class SparkSQLExecutor:
 
 
 class DatabricksVectorSearchExecutor:
-    """Bridges SDOL's QueryExecutor protocol with Databricks Vector Search."""
+    """Bridges SDOL's QueryExecutor protocol with Databricks Vector Search.
+
+    Accepts DatabricksVSQuery objects produced by the
+    DatabricksVectorSearchConnector's synthesize_query stage.
+    """
 
     def __init__(self, endpoint_name: str, index_name: str):
         from databricks.vector_search.client import VectorSearchClient
@@ -117,15 +122,17 @@ class DatabricksVectorSearchExecutor:
         )
 
     async def execute(self, query) -> dict:
-        filters = {}
-        if hasattr(query, "filters") and query.filters:
-            filters = query.filters
-        results = self._index.similarity_search(
-            query_text=query.query_text,
-            columns=["log_id", "machine_id", "log_date", "fault_category", "severity", "description"],
-            num_results=getattr(query, "max_results", 10),
-            filters=filters,
-        )
+        kwargs = {
+            "query_text": query.query_text,
+            "columns": query.columns or [
+                "log_id", "machine_id", "log_date",
+                "fault_category", "severity", "description",
+            ],
+            "num_results": query.num_results,
+        }
+        if query.filters_json:
+            kwargs["filters"] = query.filters_json
+        results = self._index.similarity_search(**kwargs)
         columns = [c["name"] for c in results.get("manifest", {}).get("columns", [])]
         data_array = results.get("result", {}).get("data_array", [])
         records = [dict(zip(columns, row)) for row in data_array]
@@ -163,11 +170,14 @@ olap_connector = DatabricksDBSQLConnector(
     staleness_sec=900.0,
 )
 
-doc_connector = GenericDocumentConnector(
+doc_connector = DatabricksVectorSearchConnector(
     executor=vs_executor,
     connector_id="fleet.docs",
     source_system="databricks.vector_search.maintenance",
     available_entities=["maintenance_logs"],
+    catalog=CATALOG,
+    schema=SCHEMA,
+    index_name=VS_INDEX_NAME,
 )
 
 registry = CapabilityRegistry()
@@ -188,7 +198,7 @@ sdol = SDOLEngine(router)
 print("SDOL fleet pipeline ready")
 print(f"  OLTP  entities: {oltp_connector._available_entities}")
 print(f"  OLAP  entities: {olap_connector._available_entities} (consistency={olap_connector.default_consistency.value})")
-print(f"  Doc   entities: {doc_connector._available_entities}")
+print(f"  Doc   entities: {doc_connector._available_entities} (index={VS_INDEX_NAME})")
 
 # COMMAND ----------
 

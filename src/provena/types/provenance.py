@@ -1,4 +1,4 @@
-"""Provenance and trust types — the epistemic foundation of SDOL."""
+"""Provenance and trust types — the epistemic foundation of Provena."""
 
 from __future__ import annotations
 

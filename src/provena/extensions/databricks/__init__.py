@@ -1,4 +1,4 @@
-"""Databricks provider extensions for SDOL.
+"""Databricks provider extensions for Provena.
 
 Provides connectors for:
 - OLAP analytics via Databricks SQL (DBSQL) warehouses

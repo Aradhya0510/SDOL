@@ -2,8 +2,6 @@
 
 from provena.agent.agent_sdk import Provena
 
-# Backwards-compatible alias
-SDOL = Provena
 from provena.agent.intent_formulator import IntentFormulator
 from provena.connectors.base_connector import BaseConnector
 from provena.connectors.capability_registry import CapabilityRegistry
@@ -32,7 +30,6 @@ except ImportError:
 
 __all__ = [
     "Provena",
-    "SDOL",
     "IntentFormulator",
     "SemanticRouter",
     "ContextCompiler",

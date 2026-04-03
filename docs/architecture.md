@@ -1,6 +1,6 @@
-# SDOL Architecture
+# Provena Architecture
 
-This document provides a detailed technical walkthrough of SDOL's internal architecture — layers, components, data flow, type system, and design decisions.
+This document provides a detailed technical walkthrough of Provena's internal architecture — layers, components, data flow, type system, and design decisions.
 
 ---
 
@@ -15,7 +15,7 @@ This document provides a detailed technical walkthrough of SDOL's internal archi
    - [Capability Types](#capability-types)
    - [Error Hierarchy](#error-hierarchy)
 4. [Layer 2: Agent SDK](#layer-2-agent-sdk)
-   - [SDOL Class](#sdol-class)
+   - [Provena Class](#provena-class)
    - [IntentFormulator](#intentformulator)
 5. [Layer 3: Semantic Router and Query Planner](#layer-3-semantic-router-and-query-planner)
    - [SemanticRouter](#semanticrouter)
@@ -41,12 +41,12 @@ This document provides a detailed technical walkthrough of SDOL's internal archi
 
 ## System Overview
 
-SDOL is organized into nine composable layers, each with a single responsibility:
+Provena is organized into nine composable layers, each with a single responsibility:
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │  Layer 2: Agent SDK                                              │
-│  SDOL (public API) + IntentFormulator (builders)                 │
+│  Provena (public API) + IntentFormulator (builders)              │
 ├──────────────────────────────────────────────────────────────────┤
 │  Layer 3: Semantic Router                                        │
 │  SemanticRouter → QueryPlanner → IntentDecomposer                │
@@ -89,7 +89,7 @@ Phase 1: FORMULATE
   Agent → IntentFormulator.point_lookup() → PointLookupIntent (Pydantic-validated)
 
 Phase 2: PLAN
-  SDOL.query(intent)
+  Provena.query(intent)
     → SemanticRouter.route(intent)
       → QueryPlanner.plan(intent)
         → IntentDecomposer.decompose(intent)         # flatten composites
@@ -112,9 +112,9 @@ Phase 4: COMPILE
     → ContextCompiler.compile() → ContextFrame
 
 Phase 5: EPISTEMIC
-  SDOL.query()
+  Provena.query()
     → EpistemicTracker.ingest(frame)
-    → Agent calls SDOL.get_epistemic_context()
+    → Agent calls Provena.get_epistemic_context()
     → LLM-injectable prompt with confidence, warnings, conflicts
 ```
 
@@ -126,7 +126,7 @@ All models use Pydantic v2 for combined type safety and runtime validation. The 
 
 ### Intent Types
 
-**Location:** `src/sdol/types/intent.py`
+**Location:** `src/provena/types/intent.py`
 
 Eight intent types represent ontological categories of questions:
 
@@ -153,7 +153,7 @@ The `Intent` discriminated union uses Pydantic's `Field(discriminator="type")` f
 
 ### Provenance Types
 
-**Location:** `src/sdol/types/provenance.py`
+**Location:** `src/provena/types/provenance.py`
 
 Every data element carries a `ProvenanceEnvelope`:
 
@@ -175,7 +175,7 @@ Every data element carries a `ProvenanceEnvelope`:
 
 ### Context Types
 
-**Location:** `src/sdol/types/context.py`
+**Location:** `src/provena/types/context.py`
 
 | Type | Purpose |
 |------|---------|
@@ -188,7 +188,7 @@ Every data element carries a `ProvenanceEnvelope`:
 
 ### Capability Types
 
-**Location:** `src/sdol/types/capability.py`
+**Location:** `src/provena/types/capability.py`
 
 - `ConnectorCapabilities` — feature flags (7 booleans: aggregation, windowing, traversal, similarity, inference, temporal bucketing, full-text search)
 - `ConnectorPerformance` — `estimated_latency_ms`, `max_result_cardinality`, `supports_batch_lookup`
@@ -196,9 +196,9 @@ Every data element carries a `ProvenanceEnvelope`:
 
 ### Error Hierarchy
 
-**Location:** `src/sdol/types/errors.py`
+**Location:** `src/provena/types/errors.py`
 
-All errors extend `SDOLError(Exception)` with a typed `SDOLErrorCode` and structured `context` dict:
+All errors extend `ProvenaError(Exception)` with a typed `ProvenaErrorCode` and structured `context` dict:
 
 | Error | Code | When |
 |-------|------|------|
@@ -211,9 +211,9 @@ All errors extend `SDOLError(Exception)` with a typed `SDOLErrorCode` and struct
 
 ## Layer 2: Agent SDK
 
-### SDOL Class
+### Provena Class
 
-**Location:** `src/sdol/agent/agent_sdk.py`
+**Location:** `src/provena/agent/agent_sdk.py`
 
 The public entry point. Intentionally thin — delegates everything to the router.
 
@@ -227,7 +227,7 @@ The public entry point. Intentionally thin — delegates everything to the route
 
 ### IntentFormulator
 
-**Location:** `src/sdol/agent/intent_formulator.py`
+**Location:** `src/provena/agent/intent_formulator.py`
 
 Builder methods for all 8 intent types. Each method:
 1. Generates a unique ID (`intent-{counter}-{timestamp_ms}`)
@@ -240,7 +240,7 @@ Builder methods for all 8 intent types. Each method:
 
 ### SemanticRouter
 
-**Location:** `src/sdol/core/router/semantic_router.py`
+**Location:** `src/provena/core/router/semantic_router.py`
 
 The main orchestrator. `route(intent)` does three things:
 
@@ -254,7 +254,7 @@ The main orchestrator. `route(intent)` does three things:
 
 ### QueryPlanner
 
-**Location:** `src/sdol/core/router/query_planner.py`
+**Location:** `src/provena/core/router/query_planner.py`
 
 Builds an `ExecutionPlan` from an intent:
 
@@ -268,7 +268,7 @@ Output: `ExecutionPlan` with `steps`, `estimated_total_ms`, `has_parallel_steps`
 
 ### IntentDecomposer
 
-**Location:** `src/sdol/core/router/intent_decomposer.py`
+**Location:** `src/provena/core/router/intent_decomposer.py`
 
 Two responsibilities:
 
@@ -280,7 +280,7 @@ Two responsibilities:
 
 ### CostEstimator
 
-**Location:** `src/sdol/core/router/cost_estimator.py`
+**Location:** `src/provena/core/router/cost_estimator.py`
 
 Estimates execution cost at plan time:
 
@@ -299,11 +299,11 @@ Connectors follow a three-tier architecture:
 
 1. **Foundation** — `BaseConnector` defines the 4-stage pipeline contract and `QueryExecutor` protocol. These rarely change.
 2. **Paradigm bases** — `BaseOLAPConnector`, `BaseOLTPConnector`, `BaseDocumentConnector` encode what it *means* to be a connector of that paradigm: supported intent types, shared `interpret_intent` validation, shared `normalize_result` with paradigm-appropriate provenance defaults. Providers only override `synthesize_query()` and `get_performance()`.
-3. **Provider extensions** — Generic connectors (`GenericOLAPConnector`, `GenericOLTPConnector`, `GenericDocumentConnector`) live in `src/sdol/connectors/` under their paradigm directories. Databricks-specific connectors (`DatabricksDBSQLConnector`, `DatabricksLakebaseConnector`, `DatabricksVectorSearchConnector`) live in `src/sdol/extensions/databricks/` and are installed via `pip install sdol[databricks]`.
+3. **Provider extensions** — Generic connectors (`GenericOLAPConnector`, `GenericOLTPConnector`, `GenericDocumentConnector`) live in `src/provena/connectors/` under their paradigm directories. Databricks-specific connectors (`DatabricksDBSQLConnector`, `DatabricksLakebaseConnector`, `DatabricksVectorSearchConnector`) live in `src/provena/extensions/databricks/` and are installed via `pip install provena[databricks]`.
 
 ### BaseConnector Pipeline (Foundation)
 
-**Location:** `src/sdol/connectors/base_connector.py`
+**Location:** `src/provena/connectors/base_connector.py`
 
 Abstract base class with a concrete `execute(intent)` method that orchestrates the 4-stage pipeline:
 
@@ -327,7 +327,7 @@ Concrete method `can_handle(intent)` checks `intent.type in get_capabilities().s
 
 ### Paradigm Base Classes
 
-**Locations:** `src/sdol/connectors/olap/base.py`, `src/sdol/connectors/oltp/base.py`, `src/sdol/connectors/document/base.py`
+**Locations:** `src/provena/connectors/olap/base.py`, `src/provena/connectors/oltp/base.py`, `src/provena/connectors/document/base.py`
 
 Each paradigm base:
 - Locks down `connector_type` (e.g., `"olap"`)
@@ -337,24 +337,24 @@ Each paradigm base:
 - Declares overridable properties: `default_staleness_sec`, `default_consistency`, `source_system`
 - Leaves `synthesize_query()` abstract — this is the true provider extension point
 
-Shared utilities (`OPERATOR_MAP`, `qualify_table`, `extract_entity_keys`) live in `src/sdol/connectors/sql_utils.py`.
+Shared utilities (`OPERATOR_MAP`, `qualify_table`, `extract_entity_keys`) live in `src/provena/connectors/sql_utils.py`.
 
 ### Provider Extensions
 
-Provider-specific connectors live in `src/sdol/extensions/` and use the **extras/optional dependencies** pattern — install with `pip install sdol[<provider>]`.
+Provider-specific connectors live in `src/provena/extensions/` and use the **extras/optional dependencies** pattern — install with `pip install provena[<provider>]`.
 
 Adding a new provider (e.g., BigQuery for OLAP, Postgres for OLTP) requires:
-1. One new file under `src/sdol/extensions/<provider>/<paradigm>/` (e.g., `src/sdol/extensions/bigquery/olap/bigquery.py`)
+1. One new file under `src/provena/extensions/<provider>/<paradigm>/` (e.g., `src/provena/extensions/bigquery/olap/bigquery.py`)
 2. One query builder file with the native query dataclass + builder functions
 3. Subclass the paradigm base, implement `synthesize_query()` + `get_performance()`
 4. Add an optional-dependency group to `pyproject.toml` (e.g., `bigquery = ["google-cloud-bigquery>=3.0"]`)
 5. Register it — routing, trust scoring, context compilation, and MCP wrapping work automatically
 
-Import path: `sdol.extensions.<provider>.<paradigm>.<module>` (e.g., `sdol.extensions.databricks.olap.dbsql`). All Databricks connectors are also re-exported from `sdol.__init__` for convenience.
+Import path: `provena.extensions.<provider>.<paradigm>.<module>` (e.g., `provena.extensions.databricks.olap.dbsql`). All Databricks connectors are also re-exported from `provena.__init__` for convenience.
 
 ### QueryExecutor Protocol
 
-**Location:** `src/sdol/connectors/executor.py`
+**Location:** `src/provena/connectors/executor.py`
 
 ```python
 class QueryExecutor(Protocol):
@@ -368,7 +368,7 @@ Connectors accept any `QueryExecutor` — this is the seam where you swap mock b
 
 ### Capability Registry
 
-**Location:** `src/sdol/connectors/capability_registry.py`
+**Location:** `src/provena/connectors/capability_registry.py`
 
 | Method | Description |
 |--------|-------------|
@@ -389,7 +389,7 @@ Connectors accept any `QueryExecutor` — this is the seam where you swap mock b
 
 ### ContextCompiler
 
-**Location:** `src/sdol/core/context/context_compiler.py`
+**Location:** `src/provena/core/context/context_compiler.py`
 
 Assembles raw connector results into a `ContextFrame`:
 
@@ -405,13 +405,13 @@ Assembles raw connector results into a `ContextFrame`:
 
 ### ConflictDetector
 
-**Location:** `src/sdol/core/context/conflict_detector.py`
+**Location:** `src/provena/core/context/conflict_detector.py`
 
 Groups elements by `entity_key`. For elements from **different source systems** with the same entity key, compares dict `data` shared keys. Any value mismatch creates a `ContextConflict` with initial resolution `defer_to_agent`.
 
 ### ConflictResolver
 
-**Location:** `src/sdol/core/context/conflict_resolver.py`
+**Location:** `src/provena/core/context/conflict_resolver.py`
 
 Applies heuristic resolution to each conflict in priority order:
 
@@ -426,7 +426,7 @@ Applies heuristic resolution to each conflict in priority order:
 
 ### TrustScorer
 
-**Location:** `src/sdol/core/provenance/trust_scorer.py`
+**Location:** `src/provena/core/provenance/trust_scorer.py`
 
 Produces a `TrustScore` from a `ProvenanceEnvelope` across four dimensions:
 
@@ -447,7 +447,7 @@ Produces a `TrustScore` from a `ProvenanceEnvelope` across four dimensions:
 
 ## Layer 7: Epistemic Tracking
 
-**Location:** `src/sdol/core/epistemic/epistemic_tracker.py`
+**Location:** `src/provena/core/epistemic/epistemic_tracker.py`
 
 The `EpistemicTracker` maintains a session-level view of data quality across multiple queries:
 
@@ -468,9 +468,9 @@ The generated prompt includes:
 
 ## Layer 8: MCP Integration
 
-**Location:** `src/sdol/mcp/`
+**Location:** `src/provena/mcp/`
 
-SDOL can wrap results for Model Context Protocol (MCP) transport.
+Provena can wrap results for Model Context Protocol (MCP) transport.
 
 ### MCPAdapter
 
@@ -481,7 +481,7 @@ Manages MCP server registrations and dispatches tool calls:
 ### ResponseWrapper
 
 Converts MCP responses into `ProvenanceEnvelope` with a three-level fallback:
-1. **SDOL metadata** in the response (highest priority — server explicitly provides provenance)
+1. **Provena metadata** in the response (highest priority — server explicitly provides provenance)
 2. **Server defaults** from `MCPServerConfig` (declared consistency, precision, staleness)
 3. **Conservative defaults** (`BEST_EFFORT` consistency, `ESTIMATED` precision, no staleness guarantee)
 
@@ -489,7 +489,7 @@ Converts MCP responses into `ProvenanceEnvelope` with a three-level fallback:
 
 ## Layer 9: Cross-Source Join Optimizer
 
-**Location:** `src/sdol/core/router/join_optimizer.py`
+**Location:** `src/provena/core/router/join_optimizer.py`
 
 The `JoinOptimizer` provides strategies for joining results across different connectors. It is available as a library component (not automatically invoked by `SemanticRouter.route()`).
 
@@ -517,16 +517,16 @@ Different connectors?    → HASH_MATERIALIZE (build on smaller side)
 ## Directory Structure
 
 ```
-src/sdol/                                 # Core package + provider extensions
+src/provena/                                 # Core package + provider extensions
 ├── __init__.py                           # public exports (re-exports extensions for convenience)
 ├── extensions/
 │   ├── __init__.py                       # namespace marker
-│   └── databricks/                       # pip install sdol[databricks]
+│   └── databricks/                       # pip install provena[databricks]
 │       ├── olap/dbsql.py                 # DatabricksDBSQLConnector
 │       ├── oltp/lakebase.py              # DatabricksLakebaseConnector
 │       └── document/vector_search.py     # DatabricksVectorSearchConnector
 ├── agent/
-│   ├── agent_sdk.py                      # SDOL class (public API)
+│   ├── agent_sdk.py                      # Provena class (public API)
 │   └── intent_formulator.py              # intent builders
 ├── connectors/
 │   ├── base_connector.py                 # BaseConnector ABC (foundation)
@@ -565,7 +565,7 @@ src/sdol/                                 # Core package + provider extensions
 ├── mcp/
 │   ├── mcp_adapter.py                    # MCP server management
 │   ├── response_wrapper.py               # MCP → ProvenanceEnvelope
-│   └── protocol_extensions.py            # SDOL metadata envelope for MCP
+│   └── protocol_extensions.py            # Provena metadata envelope for MCP
 ├── types/
 │   ├── intent.py                         # 8 intent types + discriminated union
 │   ├── provenance.py                     # provenance enums + envelope + trust

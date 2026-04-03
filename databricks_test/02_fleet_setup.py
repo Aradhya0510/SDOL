@@ -15,7 +15,7 @@
 # MAGIC
 # MAGIC **Conflict seed:** Machine `EXC-0342` is `offline` in the OLTP registry but still
 # MAGIC shows `online` in the OLAP daily aggregate (batch hasn't caught up yet). This
-# MAGIC engineered discrepancy lets the benchmark demonstrate SDOL's conflict detection.
+# MAGIC engineered discrepancy lets the benchmark demonstrate Provena's conflict detection.
 # MAGIC
 # MAGIC **Prerequisites:** Unity Catalog workspace. A Databricks Vector Search endpoint
 # MAGIC (the notebook creates one if needed).
@@ -37,7 +37,7 @@ dbutils.library.restartPython()
 
 dbutils.widgets.text("catalog", "users")
 dbutils.widgets.text("schema", "default")
-dbutils.widgets.text("vs_endpoint", "sdol_fleet_vs")
+dbutils.widgets.text("vs_endpoint", "provena_fleet_vs")
 dbutils.widgets.text("embedding_model", "databricks-bge-large-en")
 dbutils.widgets.dropdown("use_existing_catalog", "true", ["true", "false"])
 

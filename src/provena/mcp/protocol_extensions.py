@@ -1,4 +1,4 @@
-"""SDOL metadata envelope for MCP protocol extensions."""
+"""Provena metadata envelope for MCP protocol extensions."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from typing import Any
 from pydantic import BaseModel
 
 
-class SDOLMetadataEnvelope(BaseModel):
-    """Extended metadata that SDOL-aware MCP servers can include."""
+class ProvenaMetadataEnvelope(BaseModel):
+    """Extended metadata that Provena-aware MCP servers can include."""
 
     retrieval_method: str | None = None
     consistency: str | None = None

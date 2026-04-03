@@ -1,1 +1,1 @@
-"""SDOL extensions — provider-specific connector implementations."""
+"""Provena extensions — provider-specific connector implementations."""

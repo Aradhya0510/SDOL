@@ -1,6 +1,6 @@
 # Databricks Integration Guide
 
-SDOL ships with three Databricks-native typed connectors that let your agent query the Databricks Lakehouse without writing SQL or managing connections — while automatically tracking provenance, consistency, and trust.
+Provena ships with three Databricks-native typed connectors that let your agent query the Databricks Lakehouse without writing SQL or managing connections — while automatically tracking provenance, consistency, and trust.
 
 | Connector | Paradigm | Backend | Intent Types | Latency Profile |
 |-----------|----------|---------|-------------|-----------------|
@@ -10,7 +10,7 @@ SDOL ships with three Databricks-native typed connectors that let your agent que
 
 All three support **Unity Catalog** three-level namespacing and generate Databricks-native queries with platform-specific optimizations.
 
-These are **provider extensions** of the paradigm base classes and live in `src/sdol/extensions/databricks/`. Install with `pip install sdol[databricks]`. Import them via `sdol.extensions.databricks.*` or directly from `sdol` (re-exported for convenience).
+These are **provider extensions** of the paradigm base classes and live in `src/provena/extensions/databricks/`. Install with `pip install provena[databricks]`. Import them via `provena.extensions.databricks.*` or directly from `provena` (re-exported for convenience).
 
 ---
 
@@ -48,7 +48,7 @@ These are **provider extensions** of the paradigm base classes and live in `src/
                           └────────────┬─────────────┘
                                        │ Intent
                           ┌────────────▼─────────────┐
-                          │         SDOL SDK          │
+                          │       Provena SDK         │
                           │   (IntentFormulator +     │
                           │    SemanticRouter)         │
                           └────────────┬─────────────┘
@@ -91,14 +91,14 @@ The Semantic Router automatically picks the right connector for each intent. `ag
 
 ```python
 import asyncio
-from sdol import (
-    SDOL, CapabilityRegistry, ContextCompiler,
+from provena import (
+    Provena, CapabilityRegistry, ContextCompiler,
     DatabricksDBSQLConnector, SemanticRouter, TrustScorer,
 )
-from sdol.connectors.executor import MockQueryExecutor
-from sdol.core.router.cost_estimator import CostEstimator
-from sdol.core.router.intent_decomposer import IntentDecomposer
-from sdol.core.router.query_planner import QueryPlanner
+from provena.connectors.executor import MockQueryExecutor
+from provena.core.router.cost_estimator import CostEstimator
+from provena.core.router.intent_decomposer import IntentDecomposer
+from provena.core.router.query_planner import QueryPlanner
 
 async def main():
     executor = MockQueryExecutor(records=[
@@ -122,9 +122,9 @@ async def main():
     compiler = ContextCompiler(TrustScorer())
     planner = QueryPlanner(registry, IntentDecomposer(), CostEstimator())
     router = SemanticRouter(planner, compiler, registry)
-    sdol = SDOL(router)
+    provena = Provena(router)
 
-    intent = sdol.formulator.aggregate_analysis(
+    intent = provena.formulator.aggregate_analysis(
         entity="orders",
         measures=[{"field": "revenue", "aggregation": "sum"}],
         dimensions=["region"],
@@ -132,7 +132,7 @@ async def main():
         order_by=[{"field": "sum_revenue", "direction": "desc"}],
     )
 
-    frame = await sdol.query(intent)
+    frame = await provena.query(intent)
 
     for slot in frame.slots:
         for elem in slot.elements:
@@ -156,13 +156,13 @@ ORDER BY sum_revenue DESC
 ### Temporal Trend Analysis
 
 ```python
-intent = sdol.formulator.temporal_trend(
+intent = provena.formulator.temporal_trend(
     entity="api_metrics",
     metric="request_count",
     window={"relative": "last_90d"},
     granularity="1d",
 )
-frame = await sdol.query(intent)
+frame = await provena.query(intent)
 ```
 
 Generated SQL uses Databricks-native `DATE_TRUNC`:
@@ -197,14 +197,14 @@ Supported granularities: `1h` (HOUR), `1d` (DAY), `1w` (WEEK), `1M` (MONTH), `1Q
 
 ```python
 import asyncio
-from sdol import (
-    SDOL, CapabilityRegistry, ContextCompiler,
+from provena import (
+    Provena, CapabilityRegistry, ContextCompiler,
     DatabricksLakebaseConnector, SemanticRouter, TrustScorer,
 )
-from sdol.connectors.executor import MockQueryExecutor
-from sdol.core.router.cost_estimator import CostEstimator
-from sdol.core.router.intent_decomposer import IntentDecomposer
-from sdol.core.router.query_planner import QueryPlanner
+from provena.connectors.executor import MockQueryExecutor
+from provena.core.router.cost_estimator import CostEstimator
+from provena.core.router.intent_decomposer import IntentDecomposer
+from provena.core.router.query_planner import QueryPlanner
 
 async def main():
     executor = MockQueryExecutor(records=[
@@ -227,14 +227,14 @@ async def main():
     compiler = ContextCompiler(TrustScorer())
     planner = QueryPlanner(registry, IntentDecomposer(), CostEstimator())
     router = SemanticRouter(planner, compiler, registry)
-    sdol = SDOL(router)
+    provena = Provena(router)
 
-    intent = sdol.formulator.point_lookup(
+    intent = provena.formulator.point_lookup(
         "customers",
         {"customer_id": "C-1042"},
         fields=["name", "tier", "last_login"],
     )
-    frame = await sdol.query(intent)
+    frame = await provena.query(intent)
 
     for slot in frame.slots:
         for elem in slot.elements:
@@ -261,7 +261,7 @@ Query builder optimizations: `lakebase_row_index`, `column_pruning`, `parameteri
 The query builder supports batch lookups for multi-key retrieval:
 
 ```python
-from sdol.extensions.databricks.oltp.lakebase_query import build_lakebase_batch_lookup
+from provena.extensions.databricks.oltp.lakebase_query import build_lakebase_batch_lookup
 
 query = build_lakebase_batch_lookup(
     entity="customers",
@@ -286,7 +286,7 @@ WHERE customer_id IN (:p0, :p1, :p2)
 Lakebase also handles simple `aggregate_analysis` intents for lightweight counts and sums that don't need a full SQL warehouse:
 
 ```python
-intent = sdol.formulator.aggregate_analysis(
+intent = provena.formulator.aggregate_analysis(
     entity="orders",
     measures=[{"field": "total", "aggregation": "count"}],
     dimensions=["status"],
@@ -303,14 +303,14 @@ intent = sdol.formulator.aggregate_analysis(
 
 ```python
 import asyncio
-from sdol import (
-    SDOL, CapabilityRegistry, ContextCompiler,
+from provena import (
+    Provena, CapabilityRegistry, ContextCompiler,
     DatabricksVectorSearchConnector, SemanticRouter, TrustScorer,
 )
-from sdol.connectors.executor import MockQueryExecutor
-from sdol.core.router.cost_estimator import CostEstimator
-from sdol.core.router.intent_decomposer import IntentDecomposer
-from sdol.core.router.query_planner import QueryPlanner
+from provena.connectors.executor import MockQueryExecutor
+from provena.core.router.cost_estimator import CostEstimator
+from provena.core.router.intent_decomposer import IntentDecomposer
+from provena.core.router.query_planner import QueryPlanner
 
 async def main():
     executor = MockQueryExecutor(records=[
@@ -334,15 +334,15 @@ async def main():
     compiler = ContextCompiler(TrustScorer())
     planner = QueryPlanner(registry, IntentDecomposer(), CostEstimator())
     router = SemanticRouter(planner, compiler, registry)
-    sdol = SDOL(router)
+    provena = Provena(router)
 
-    intent = sdol.formulator.semantic_search(
+    intent = provena.formulator.semantic_search(
         query="overheating failure high temperature",
         collection="maintenance_logs",
         filters=[{"field": "severity", "operator": "eq", "value": "critical"}],
         max_results=10,
     )
-    frame = await sdol.query(intent)
+    frame = await provena.query(intent)
 
     for slot in frame.slots:
         for elem in slot.elements:
@@ -413,20 +413,20 @@ If `catalog` and `schema` are omitted, queries use bare table/index names — us
 
 ## Cross-Paradigm Queries: DBSQL + Lakebase + Vector Search
 
-Register all three connectors and let SDOL's Semantic Router handle intent routing automatically.
+Register all three connectors and let Provena's Semantic Router handle intent routing automatically.
 
 ```python
 import asyncio
-from sdol import (
-    SDOL, CapabilityRegistry, ContextCompiler,
+from provena import (
+    Provena, CapabilityRegistry, ContextCompiler,
     DatabricksDBSQLConnector, DatabricksLakebaseConnector,
     SemanticRouter, TrustScorer,
 )
-from sdol.connectors.executor import MockQueryExecutor
-from sdol.core.provenance.trust_scorer import TrustScorerConfig
-from sdol.core.router.cost_estimator import CostEstimator
-from sdol.core.router.intent_decomposer import IntentDecomposer
-from sdol.core.router.query_planner import QueryPlanner
+from provena.connectors.executor import MockQueryExecutor
+from provena.core.provenance.trust_scorer import TrustScorerConfig
+from provena.core.router.cost_estimator import CostEstimator
+from provena.core.router.intent_decomposer import IntentDecomposer
+from provena.core.router.query_planner import QueryPlanner
 
 async def main():
     dbsql_exec = MockQueryExecutor(records=[
@@ -466,17 +466,17 @@ async def main():
     compiler = ContextCompiler(TrustScorer(trust_config))
     planner = QueryPlanner(registry, IntentDecomposer(), CostEstimator())
     router = SemanticRouter(planner, compiler, registry)
-    sdol = SDOL(router)
+    provena = Provena(router)
 
-    intent = sdol.formulator.composite(
+    intent = provena.formulator.composite(
         sub_intents=[
-            sdol.formulator.aggregate_analysis(
+            provena.formulator.aggregate_analysis(
                 entity="churn_scores",
                 measures=[{"field": "churn_score", "aggregation": "max"}],
                 dimensions=["customer_id", "region"],
                 having=[{"field": "churn_score", "operator": "gt", "value": 0.7}],
             ),
-            sdol.formulator.point_lookup(
+            provena.formulator.point_lookup(
                 "customers", {"customer_id": "C-1042"}
             ),
         ],
@@ -484,7 +484,7 @@ async def main():
         fusion_key="customer_id",
     )
 
-    frame = await sdol.query(intent)
+    frame = await provena.query(intent)
 
     print(f"Elements: {frame.stats.total_elements}")
     print(f"Avg trust: {frame.stats.avg_trust_score:.2f}")
@@ -494,7 +494,7 @@ async def main():
             print(f"    {elem.data}")
             print(f"    Source: {elem.provenance.source_system}")
 
-    print(f"\n{sdol.get_epistemic_context()}")
+    print(f"\n{provena.get_epistemic_context()}")
 
 asyncio.run(main())
 ```
@@ -653,7 +653,7 @@ Every result from a Databricks connector carries full provenance metadata that f
 Configure trust scoring authority for your Databricks environments:
 
 ```python
-from sdol.core.provenance.trust_scorer import TrustScorer, TrustScorerConfig
+from provena.core.provenance.trust_scorer import TrustScorer, TrustScorerConfig
 
 trust_config = TrustScorerConfig(source_authority_map={
     "databricks.sql_warehouse.prod": 0.95,

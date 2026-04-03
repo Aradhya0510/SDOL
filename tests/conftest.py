@@ -1,4 +1,4 @@
-"""Shared fixtures for SDOL tests."""
+"""Shared fixtures for Provena tests."""
 
 import pytest
 

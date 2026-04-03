@@ -41,8 +41,8 @@ dbutils.library.restartPython()
 
 dbutils.widgets.text("catalog", "users")
 dbutils.widgets.text("schema", "aradhya_chouhan")
-dbutils.widgets.text("vs_endpoint", "sdol_fleet_vs")
-dbutils.widgets.text("sdol_project_root", "/Workspace/Users/{user}/SDOL")
+dbutils.widgets.text("vs_endpoint", "provena_fleet_vs")
+dbutils.widgets.text("sdol_project_root", "/Workspace/Users/{user}/Provena")
 
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
@@ -76,7 +76,7 @@ except ImportError:
     else:
         raise ImportError(f"Provena not found at {resolved}")
 
-print(f"Provena loaded — exports: {sdol.__all__[:5]}...")
+print(f"Provena loaded — exports: {provena.__all__[:5]}...")
 
 # COMMAND ----------
 
@@ -106,7 +106,7 @@ from provena.types.provenance import ConsistencyGuarantee
 
 
 class SparkSQLExecutor:
-    """Bridges SDOL's QueryExecutor protocol with the notebook's SparkSession."""
+    """Bridges Provena's QueryExecutor protocol with the notebook's SparkSession."""
 
     async def execute(self, query) -> dict:
         sql_str = query.sql
@@ -122,7 +122,7 @@ class SparkSQLExecutor:
 
 
 class DatabricksVectorSearchExecutor:
-    """Bridges SDOL's QueryExecutor protocol with Databricks Vector Search."""
+    """Bridges Provena's QueryExecutor protocol with Databricks Vector Search."""
 
     def __init__(self, endpoint_name, index_name):
         from databricks.vector_search.client import VectorSearchClient
@@ -205,9 +205,9 @@ trust_cfg = TrustScorerConfig(source_authority_map={
 compiler = ContextCompiler(TrustScorer(trust_cfg))
 planner = QueryPlanner(registry, IntentDecomposer(), CostEstimator())
 router = SemanticRouter(planner, compiler, registry)
-sdol = ProvenaEngine(router)
+provena = ProvenaEngine(router)
 
-print("SDOL fleet pipeline ready")
+print("Provena fleet pipeline ready")
 print(f"  OLTP  entities: {oltp_connector._available_entities}")
 print(f"  OLAP  entities: {olap_connector._available_entities} (consistency={olap_connector.default_consistency.value})")
 print(f"  Doc   entities: {doc_connector._available_entities} (index={VS_INDEX_NAME})")
@@ -257,7 +257,7 @@ def inspect_frame(frame, title=""):
 # MAGIC
 # MAGIC ### Intent Formulation: Declaring What You Need
 # MAGIC
-# MAGIC With SDOL, agents do not write SQL. They declare *typed intents* that describe
+# MAGIC With Provena, agents do not write SQL. They declare *typed intents* that describe
 # MAGIC the information they need. The framework handles routing, SQL generation,
 # MAGIC execution, and provenance tracking.
 # MAGIC
@@ -269,15 +269,15 @@ def inspect_frame(frame, title=""):
 # MAGIC ### 1a. Point Lookup — OLTP (fleet_machines)
 # MAGIC
 # MAGIC A `point_lookup` intent says: "I need the record for machine EXC-0342."
-# MAGIC SDOL routes this to the OLTP connector (Lakebase), which has strong
+# MAGIC Provena routes this to the OLTP connector (Lakebase), which has strong
 # MAGIC consistency guarantees and sub-second latency.
 
 # COMMAND ----------
 
-sdol.reset()
+provena.reset()
 
 # --- Step 1: Declare the intent ---
-intent_oltp = sdol.formulator.point_lookup("fleet_machines", {"machine_id": "EXC-0342"})
+intent_oltp = provena.formulator.point_lookup("fleet_machines", {"machine_id": "EXC-0342"})
 
 # Show the intent BEFORE execution — this is what the agent declared
 print("INTENT (before execution):")
@@ -286,9 +286,9 @@ print(json.dumps(intent_oltp.model_dump(), indent=2, default=str))
 # COMMAND ----------
 
 # --- Step 2: Execute through the Provena pipeline ---
-frame_oltp = asyncio.run(sdol.query(intent_oltp))
+frame_oltp = asyncio.run(provena.query(intent_oltp))
 
-# Show the ContextFrame AFTER execution — this is what SDOL returned
+# Show the ContextFrame AFTER execution — this is what Provena returned
 inspect_frame(frame_oltp, "Point Lookup: EXC-0342 from OLTP (fleet_machines)")
 
 # COMMAND ----------
@@ -299,7 +299,7 @@ inspect_frame(frame_oltp, "Point Lookup: EXC-0342 from OLTP (fleet_machines)")
 # MAGIC 2. **Provenance** — source system, retrieval method, consistency level, staleness window
 # MAGIC 3. **Trust Score** — a computed composite score (0-1) with four dimensional breakdowns
 # MAGIC
-# MAGIC The agent did not write SQL. It declared an intent. SDOL did the rest.
+# MAGIC The agent did not write SQL. It declared an intent. Provena did the rest.
 
 # COMMAND ----------
 
@@ -307,12 +307,12 @@ inspect_frame(frame_oltp, "Point Lookup: EXC-0342 from OLTP (fleet_machines)")
 # MAGIC ### 1b. Aggregate Analysis — OLAP (telemetry_daily)
 # MAGIC
 # MAGIC An `aggregate_analysis` intent says: "I need average engine temperature by region."
-# MAGIC SDOL routes this to the OLAP connector (DBSQL) with push-down aggregation —
+# MAGIC Provena routes this to the OLAP connector (DBSQL) with push-down aggregation —
 # MAGIC the `AVG()` and `GROUP BY` happen inside the SQL engine, not in Python.
 
 # COMMAND ----------
 
-intent_olap = sdol.formulator.aggregate_analysis(
+intent_olap = provena.formulator.aggregate_analysis(
     entity="telemetry_daily",
     measures=[{"field": "avg_engine_temp", "aggregation": "avg"}],
     dimensions=["region"],
@@ -324,7 +324,7 @@ print(json.dumps(intent_olap.model_dump(), indent=2, default=str))
 
 # COMMAND ----------
 
-frame_olap = asyncio.run(sdol.query(intent_olap))
+frame_olap = asyncio.run(provena.query(intent_olap))
 inspect_frame(frame_olap, "Aggregate Analysis: Avg Engine Temp by Region from OLAP")
 
 # COMMAND ----------
@@ -345,7 +345,7 @@ inspect_frame(frame_olap, "Aggregate Analysis: Avg Engine Temp by Region from OL
 # MAGIC
 # MAGIC ### Under the Hood: The 4-Stage Connector Pipeline
 # MAGIC
-# MAGIC Every SDOL query goes through four deterministic stages:
+# MAGIC Every Provena query goes through four deterministic stages:
 # MAGIC
 # MAGIC ```
 # MAGIC  Intent  -->  interpret  -->  synthesize  -->  execute  -->  normalize
@@ -361,10 +361,10 @@ inspect_frame(frame_olap, "Aggregate Analysis: Avg Engine Temp by Region from OL
 
 # COMMAND ----------
 
-sdol.reset()
+provena.reset()
 
 # Step 1: Create the intent
-intent = sdol.formulator.point_lookup("fleet_machines", {"machine_id": "EXC-0100"})
+intent = provena.formulator.point_lookup("fleet_machines", {"machine_id": "EXC-0100"})
 print("STEP 1 - Intent created:")
 print(f"  Type:   {intent.type}")
 print(f"  Entity: {intent.entity}")
@@ -391,7 +391,7 @@ if candidates:
 # COMMAND ----------
 
 # Step 3 + 4: Execute through the full Provena pipeline and inspect the result
-frame = asyncio.run(sdol.query(intent))
+frame = asyncio.run(provena.query(intent))
 inspect_frame(frame, "STEP 3+4 - Execution and Normalization: EXC-0100")
 
 # COMMAND ----------
@@ -416,7 +416,7 @@ inspect_frame(frame, "STEP 3+4 - Execution and Normalization: EXC-0100")
 # MAGIC
 # MAGIC ### Trust Scoring: Computed Confidence, Not Guesswork
 # MAGIC
-# MAGIC SDOL computes trust scores across four dimensions for every data element:
+# MAGIC Provena computes trust scores across four dimensions for every data element:
 # MAGIC - **Source Authority** — configured weight per source system (e.g., OLTP = 0.95, VS = 0.70)
 # MAGIC - **Consistency** — strong vs eventual consistency guarantees
 # MAGIC - **Freshness** — how stale the data might be (staleness window)
@@ -426,28 +426,28 @@ inspect_frame(frame, "STEP 3+4 - Execution and Normalization: EXC-0100")
 
 # COMMAND ----------
 
-sdol.reset()
+provena.reset()
 
 # Query 1: OLTP point lookup (strong consistency, exact match)
-intent_1 = sdol.formulator.point_lookup("fleet_machines", {"machine_id": "EXC-0001"})
-frame_1 = asyncio.run(sdol.query(intent_1))
+intent_1 = provena.formulator.point_lookup("fleet_machines", {"machine_id": "EXC-0001"})
+frame_1 = asyncio.run(provena.query(intent_1))
 print("Query 1 complete: OLTP point lookup (fleet_machines)")
 
 # Query 2: OLAP aggregation (eventual consistency, aggregated)
-intent_2 = sdol.formulator.aggregate_analysis(
+intent_2 = provena.formulator.aggregate_analysis(
     entity="telemetry_daily",
     measures=[{"field": "avg_engine_temp", "aggregation": "avg"}],
     dimensions=["region"],
 )
-frame_2 = asyncio.run(sdol.query(intent_2))
+frame_2 = asyncio.run(provena.query(intent_2))
 print("Query 2 complete: OLAP aggregation (telemetry_daily)")
 
 # Query 3: Vector Search semantic search (similarity-ranked, approximate)
-intent_3 = sdol.formulator.semantic_search(
+intent_3 = provena.formulator.semantic_search(
     query="hydraulic failure high pressure",
     collection="maintenance_logs",
 )
-frame_3 = asyncio.run(sdol.query(intent_3))
+frame_3 = asyncio.run(provena.query(intent_3))
 print("Query 3 complete: Vector Search semantic search (maintenance_logs)")
 
 # COMMAND ----------
@@ -515,19 +515,19 @@ display(trust_df)
 # MAGIC - **OLAP** (`telemetry_daily`): last_known_status = `online` (batch, 15-min stale)
 # MAGIC
 # MAGIC A vanilla MCP agent would get both values and either pick one arbitrarily
-# MAGIC or hallucinate a reconciliation. SDOL detects the conflict automatically
+# MAGIC or hallucinate a reconciliation. Provena detects the conflict automatically
 # MAGIC and resolves it using provenance-based heuristics.
 
 # COMMAND ----------
 
-sdol.reset()
+provena.reset()
 
 # Composite intent: query BOTH OLTP and OLAP for the same machine
-oltp_intent = sdol.formulator.point_lookup("fleet_machines", {"machine_id": "EXC-0342"})
+oltp_intent = provena.formulator.point_lookup("fleet_machines", {"machine_id": "EXC-0342"})
 
 today_str = str(spark.sql("SELECT current_date()").first()[0])
 
-olap_intent = sdol.formulator.aggregate_analysis(
+olap_intent = provena.formulator.aggregate_analysis(
     entity="telemetry_daily",
     measures=[{"field": "max_engine_temp", "aggregation": "max"}],
     dimensions=["machine_id", "last_known_status"],
@@ -537,7 +537,7 @@ olap_intent = sdol.formulator.aggregate_analysis(
     ],
 )
 
-composite = sdol.formulator.composite(
+composite = provena.formulator.composite(
     sub_intents=[oltp_intent, olap_intent],
     fusion_operator="union",
     fusion_key="machine_id",
@@ -552,7 +552,7 @@ print(f"  Today:       {today_str}")
 # COMMAND ----------
 
 # Execute the composite query
-frame_conflict = asyncio.run(sdol.query(composite))
+frame_conflict = asyncio.run(provena.query(composite))
 
 # COMMAND ----------
 
@@ -607,7 +607,7 @@ else:
 # MAGIC ### Key Insight
 # MAGIC
 # MAGIC OLTP says `offline` (strong consistency, 30s staleness). OLAP says `online`
-# MAGIC (eventual consistency, 900s staleness). SDOL detects this conflict automatically
+# MAGIC (eventual consistency, 900s staleness). Provena detects this conflict automatically
 # MAGIC and resolves it by preferring the source with stronger consistency guarantees.
 # MAGIC
 # MAGIC The resolution is **deterministic** — it will make the same decision every time,
@@ -616,7 +616,7 @@ else:
 # MAGIC
 # MAGIC A vanilla MCP agent receiving both values would have to rely on the LLM to
 # MAGIC notice the discrepancy and reason about it. Sometimes it would. Sometimes
-# MAGIC it would not. SDOL makes this detection and resolution **structural**.
+# MAGIC it would not. Provena makes this detection and resolution **structural**.
 
 # COMMAND ----------
 
@@ -626,7 +626,7 @@ else:
 # MAGIC
 # MAGIC ### Epistemic Context: The Agent's Data Quality Briefing
 # MAGIC
-# MAGIC After executing queries, SDOL accumulates an epistemic context — a structured
+# MAGIC After executing queries, Provena accumulates an epistemic context — a structured
 # MAGIC summary of data quality, trust scores, conflicts, and caveats. This context
 # MAGIC is designed to be injected into the LLM's system prompt so the agent can
 # MAGIC reason about data quality and communicate uncertainty.
@@ -634,7 +634,7 @@ else:
 # COMMAND ----------
 
 # The epistemic context was built up from all the queries above
-epistemic_prompt = sdol.get_epistemic_context()
+epistemic_prompt = provena.get_epistemic_context()
 
 print("FULL EPISTEMIC CONTEXT (injected into LLM system prompt):")
 print("=" * 80)
@@ -647,7 +647,7 @@ print(epistemic_prompt)
 
 # COMMAND ----------
 
-# Simulate what a vanilla MCP agent sees vs what an SDOL-enhanced agent sees
+# Simulate what a vanilla MCP agent sees vs what a Provena-enhanced agent sees
 
 # --- LEFT: Vanilla MCP agent ---
 vanilla_data = {
@@ -658,7 +658,7 @@ vanilla_data = {
     "region": "north_america",
 }
 
-# --- RIGHT: SDOL-enhanced agent ---
+# --- RIGHT: Provena-enhanced agent ---
 sdol_data_elements = []
 for slot in frame_conflict.slots:
     for elem in slot.elements:
@@ -698,7 +698,7 @@ print("  (The LLM must figure out data quality on its own.)")
 
 print()
 print("=" * 80)
-print("  RIGHT: What an SDOL-enhanced agent sees")
+print("  RIGHT: What a Provena-enhanced agent sees")
 print("=" * 80)
 print(json.dumps({
     "data_elements": sdol_data_elements,
@@ -713,7 +713,7 @@ print("  (The LLM receives a structured briefing on data quality.)")
 
 # MAGIC %md
 # MAGIC The difference is structural, not cosmetic. The vanilla agent gets raw JSON and
-# MAGIC must rely on the LLM to notice quality issues. The SDOL agent gets a
+# MAGIC must rely on the LLM to notice quality issues. The Provena agent gets a
 # MAGIC deterministic data-quality briefing that the LLM can reference in its response.
 
 # COMMAND ----------
@@ -730,14 +730,14 @@ print("  (The LLM receives a structured briefing on data quality.)")
 
 # COMMAND ----------
 
-sdol.reset()
+provena.reset()
 
-intent_vs = sdol.formulator.semantic_search(
+intent_vs = provena.formulator.semantic_search(
     query="hydraulic failure high pressure",
     collection="maintenance_logs",
 )
 
-frame_vs = asyncio.run(sdol.query(intent_vs))
+frame_vs = asyncio.run(provena.query(intent_vs))
 inspect_frame(frame_vs, "Semantic Search: 'hydraulic failure high pressure'")
 
 # COMMAND ----------
@@ -788,19 +788,19 @@ else:
 # MAGIC
 # MAGIC ### Putting It All Together
 # MAGIC
-# MAGIC The core value proposition of SDOL is not making the agent smarter.
+# MAGIC The core value proposition of Provena is not making the agent smarter.
 # MAGIC The LLM is already capable of noticing data quality issues — sometimes.
 # MAGIC The problem is "sometimes."
 # MAGIC
-# MAGIC SDOL adds **deterministic guarantees** around the probabilistic LLM:
+# MAGIC Provena adds **deterministic guarantees** around the probabilistic LLM:
 # MAGIC
-# MAGIC | Property | Without SDOL | With SDOL |
+# MAGIC | Property | Without Provena | With Provena |
 # MAGIC |----------|-------------|-----------|
 # MAGIC | **Provenance** | Not tracked | ALWAYS tracked — every element has source, freshness, consistency |
 # MAGIC | **Conflict detection** | Depends on LLM noticing | ALWAYS detected — structural comparison of overlapping fields |
 # MAGIC | **Trust scoring** | Not computed | ALWAYS scored — 4-dimensional composite with configured authority weights |
 # MAGIC | **Audit trail** | Not available | ALWAYS available — full epistemic context for every session |
-# MAGIC | **SQL generation** | LLM writes SQL (error-prone) | SDOL generates parameterized queries from typed intents |
+# MAGIC | **SQL generation** | LLM writes SQL (error-prone) | Provena generates parameterized queries from typed intents |
 # MAGIC | **Token efficiency** | Raw rows dumped into context | Pre-aggregated results with push-down computation |
 # MAGIC
 # MAGIC The value is not intelligence — it is **auditability and consistency**.
@@ -813,8 +813,8 @@ else:
 
 # COMMAND ----------
 
-cost_summary = sdol.get_cost_summary()
-print("SDOL Session Cost Summary:")
+cost_summary = provena.get_cost_summary()
+print("Provena Session Cost Summary:")
 print(json.dumps(cost_summary, indent=2, default=str))
 
 # COMMAND ----------
@@ -835,7 +835,7 @@ print(json.dumps(cost_summary, indent=2, default=str))
 # MAGIC - **`02_fleet_setup`** — Creates the benchmark data tables and Vector Search index
 # MAGIC   (run this first if you have not already)
 # MAGIC - **`03_fleet_benchmark`** — Head-to-head agent evaluation: a vanilla MCP agent
-# MAGIC   vs an SDOL-enhanced agent answering the same questions, scored by LLM judges
+# MAGIC   vs a Provena-enhanced agent answering the same questions, scored by LLM judges
 # MAGIC
 # MAGIC ---
-# MAGIC *SDOL — Semantic Data Orchestration Layer*
+# MAGIC *Provena — Epistemic provenance for AI agents*

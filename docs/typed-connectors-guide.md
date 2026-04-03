@@ -1,6 +1,6 @@
 # Typed Connectors Guide
 
-Typed connectors are the storage-aware adapters at the heart of SDOL. Each connector knows how to translate declarative intents into native queries for a specific data paradigm, execute them, and normalize results with full provenance metadata.
+Typed connectors are the storage-aware adapters at the heart of Provena. Each connector knows how to translate declarative intents into native queries for a specific data paradigm, execute them, and normalize results with full provenance metadata.
 
 ---
 
@@ -56,13 +56,13 @@ Connectors are organized in three layers:
 ```
 
 **Adding a new provider** (e.g., BigQuery OLAP, Postgres OLTP) requires:
-1. One new file under `src/sdol/extensions/<provider>/<paradigm>/`
+1. One new file under `src/provena/extensions/<provider>/<paradigm>/`
 2. One query builder with native query dataclass + builder functions
 3. Subclass the paradigm base, implement `synthesize_query()` + `get_performance()`
 4. Add an optional-dependency group to `pyproject.toml` (e.g., `bigquery = [...]`)
 5. Register it — routing, trust scoring, and context compilation work automatically
 
-Provider extensions live in `src/sdol/extensions/` and use the extras/optional dependencies pattern. Install with `pip install sdol[<provider>]`. Import path: `sdol.extensions.<provider>.<paradigm>.<module>`.
+Provider extensions live in `src/provena/extensions/` and use the extras/optional dependencies pattern. Install with `pip install provena[<provider>]`. Import path: `provena.extensions.<provider>.<paradigm>.<module>`.
 
 ---
 
@@ -90,7 +90,7 @@ The `BaseConnector.execute()` method orchestrates these stages and measures wall
 
 ### OLAP Paradigm
 
-**Base class:** `BaseOLAPConnector` (`src/sdol/connectors/olap/base.py`)
+**Base class:** `BaseOLAPConnector` (`src/provena/connectors/olap/base.py`)
 **Shared logic:** `interpret_intent` (validates `AggregateAnalysisIntent | TemporalTrendIntent`), `normalize_result` (STRUCTURED/TEMPORAL slot types, COMPUTED_AGGREGATE retrieval, STRONG consistency default)
 
 | Provider | Class | Default Source | Staleness | Special Features |
@@ -99,8 +99,8 @@ The `BaseConnector.execute()` method orchestrates these stages and measures wall
 | Databricks DBSQL | `DatabricksDBSQLConnector` | `databricks.sql_warehouse` | 600s | Unity Catalog, `DATE_TRUNC`, `PERCENTILE_APPROX`, named `:p` params, Photon tracking |
 
 ```python
-from sdol import GenericOLAPConnector, DatabricksDBSQLConnector
-from sdol.connectors.executor import MockQueryExecutor
+from provena import GenericOLAPConnector, DatabricksDBSQLConnector
+from provena.connectors.executor import MockQueryExecutor
 
 generic = GenericOLAPConnector(
     executor=MockQueryExecutor(records=[...]),
@@ -122,7 +122,7 @@ See [Databricks Guide](databricks-guide.md) for full DBSQL details.
 
 ### OLTP Paradigm
 
-**Base class:** `BaseOLTPConnector` (`src/sdol/connectors/oltp/base.py`)
+**Base class:** `BaseOLTPConnector` (`src/provena/connectors/oltp/base.py`)
 **Shared logic:** `interpret_intent` (validates `PointLookupIntent | AggregateAnalysisIntent`), `normalize_result` (STRUCTURED slot type, DIRECT_QUERY/COMPUTED_AGGREGATE retrieval, READ_COMMITTED consistency default)
 
 | Provider | Class | Default Source | Staleness | Special Features |
@@ -131,8 +131,8 @@ See [Databricks Guide](databricks-guide.md) for full DBSQL details.
 | Databricks Lakebase | `DatabricksLakebaseConnector` | `databricks.lakebase` | 30s | Unity Catalog, row index, batch lookups, named `:p` params |
 
 ```python
-from sdol import GenericOLTPConnector, DatabricksLakebaseConnector
-from sdol.connectors.executor import MockQueryExecutor
+from provena import GenericOLTPConnector, DatabricksLakebaseConnector
+from provena.connectors.executor import MockQueryExecutor
 
 generic = GenericOLTPConnector(
     executor=MockQueryExecutor(records=[...]),
@@ -154,7 +154,7 @@ See [Databricks Guide](databricks-guide.md) for full Lakebase details.
 
 ### Document Paradigm
 
-**Base class:** `BaseDocumentConnector` (`src/sdol/connectors/document/base.py`)
+**Base class:** `BaseDocumentConnector` (`src/provena/connectors/document/base.py`)
 **Shared logic:** `interpret_intent` (validates `SemanticSearchIntent`), `normalize_result` (UNSTRUCTURED slot type, VECTOR_SIMILARITY retrieval, EVENTUAL consistency default)
 
 | Provider | Class | Default Source | Staleness | Special Features |
@@ -163,8 +163,8 @@ See [Databricks Guide](databricks-guide.md) for full Lakebase details.
 | Databricks Vector Search | `DatabricksVectorSearchConnector` | `databricks.vector_search` | 180s | Unity Catalog, ANN/HYBRID search, Delta Sync auto-update, metadata filter pushdown |
 
 ```python
-from sdol import GenericDocumentConnector, DatabricksVectorSearchConnector
-from sdol.connectors.executor import MockQueryExecutor
+from provena import GenericDocumentConnector, DatabricksVectorSearchConnector
+from provena.connectors.executor import MockQueryExecutor
 
 generic = GenericDocumentConnector(
     executor=MockQueryExecutor(records=[...]),
@@ -206,10 +206,10 @@ The return value must be a dict with:
 
 ### MockQueryExecutor
 
-For testing, SDOL provides `MockQueryExecutor`:
+For testing, Provena provides `MockQueryExecutor`:
 
 ```python
-from sdol.connectors.executor import MockQueryExecutor
+from provena.connectors.executor import MockQueryExecutor
 
 executor = MockQueryExecutor(
     records=[{"id": "C-1", "name": "Alice"}],
@@ -261,7 +261,7 @@ The registry uses these declarations for:
 ## Registering Connectors
 
 ```python
-from sdol import CapabilityRegistry
+from provena import CapabilityRegistry
 
 registry = CapabilityRegistry()
 registry.register(olap_connector)
@@ -299,11 +299,11 @@ from __future__ import annotations
 from typing import Any
 from dataclasses import dataclass
 
-from sdol.connectors.oltp.base import BaseOLTPConnector
-from sdol.connectors.executor import QueryExecutor
-from sdol.types.capability import ConnectorPerformance
-from sdol.types.intent import PointLookupIntent
-from sdol.types.provenance import ConsistencyGuarantee
+from provena.connectors.oltp.base import BaseOLTPConnector
+from provena.connectors.executor import QueryExecutor
+from provena.types.capability import ConnectorPerformance
+from provena.types.intent import PointLookupIntent
+from provena.types.provenance import ConsistencyGuarantee
 
 
 @dataclass

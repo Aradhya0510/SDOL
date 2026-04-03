@@ -1,13 +1,13 @@
-# SDOL — Semantic Data Orchestration Layer
+# Provena (formerly SDOL) — Implementation Specification
 ## Complete Implementation Specification for Coding Agents (Python Edition)
 
-> **What this document is:** A step-by-step implementation plan for building SDOL, a middleware layer that sits between AI agents and data sources. It adds storage-aware query planning, typed connectors, and provenance-enriched context assembly on top of the existing MCP (Model Context Protocol) transport.
+> **What this document is:** A step-by-step implementation plan for building Provena, a middleware layer that sits between AI agents and data sources. It adds storage-aware query planning, typed connectors, and provenance-enriched context assembly on top of the existing MCP (Model Context Protocol) transport.
 >
 > **How to use this document:** Implement each milestone in order. Each milestone is self-contained and testable. Do NOT skip ahead. Complete all files in a milestone, run its tests, then proceed.
 >
 > **Tech stack:** Python 3.12+, Pydantic v2 for validation and schemas, pytest for testing, asyncio for concurrent execution, no framework dependencies.
 >
-> **Why Python:** The agent ecosystem (LangChain, LlamaIndex, CrewAI, AutoGen) is Python-first. Building SDOL in Python means the Agent SDK can be embedded directly inside agent processes — no cross-language serialization boundary at the critical point where epistemic context enters the agent's prompt. The data engineering community that will contribute typed connectors also lives in Python.
+> **Why Python:** The agent ecosystem (LangChain, LlamaIndex, CrewAI, AutoGen) is Python-first. Building Provena in Python means the Agent SDK can be embedded directly inside agent processes — no cross-language serialization boundary at the critical point where epistemic context enters the agent's prompt. The data engineering community that will contribute typed connectors also lives in Python.
 
 ---
 
@@ -36,11 +36,11 @@
 ## 1. Project Structure
 
 ```
-sdol/
+provena/
 ├── pyproject.toml
 ├── README.md
 ├── src/
-│   └── sdol/
+│   └── provena/
 │       ├── __init__.py                         # Public API exports
 │       ├── py.typed                            # PEP 561 marker
 │       ├── types/
@@ -106,7 +106,7 @@ sdol/
 │       │   ├── __init__.py
 │       │   ├── mcp_adapter.py                  # MCPAdapter wraps MCP client
 │       │   ├── response_wrapper.py             # Adds metadata to MCP responses
-│       │   └── protocol_extensions.py          # SDOL metadata envelope for MCP
+│       │   └── protocol_extensions.py          # Provena metadata envelope for MCP
 │       ├── agent/
 │       │   ├── __init__.py
 │       │   ├── intent_formulator.py            # IntentFormulator class
@@ -184,9 +184,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "sdol"
-version = "0.1.0"
-description = "Semantic Data Orchestration Layer — storage-aware agent middleware"
+name = "provena"
+version = "0.2.0"
+description = "Provena — Epistemic provenance for AI agents"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.7.0",
@@ -202,7 +202,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/sdol"]
+packages = ["src/provena"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -227,12 +227,12 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH"]
 ### Step 0.2: Create directory structure
 
 ```bash
-mkdir -p src/sdol/{types,core/{provenance,context,router,epistemic},connectors/{olap,oltp,document,graph,timeseries,ontology},mcp,agent,utils}
+mkdir -p src/provena/{types,core/{provenance,context,router,epistemic},connectors/{olap,oltp,document,graph,timeseries,ontology},mcp,agent,utils}
 mkdir -p tests/{unit/{types,core/{provenance,context,router,epistemic},connectors,mcp,agent},integration}
-touch src/sdol/py.typed
+touch src/provena/py.typed
 
 # Create all __init__.py files
-find src/sdol -type d -exec touch {}/__init__.py \;
+find src/provena -type d -exec touch {}/__init__.py \;
 find tests -type d -exec touch {}/__init__.py \;
 ```
 
@@ -248,14 +248,14 @@ pip install -e ".[dev]"
 
 ```bash
 pytest              # should run 0 tests, exit 0
-mypy src/sdol       # should pass with no errors
+mypy src/provena       # should pass with no errors
 ruff check src/     # should pass with no issues
 ```
 
 ### Completion Check
 - `pip install -e ".[dev]"` succeeds
 - `pytest` exits cleanly with 0 tests collected
-- `mypy src/sdol` passes strict mode
+- `mypy src/provena` passes strict mode
 - All directories and `__init__.py` files exist
 
 ---
@@ -265,7 +265,7 @@ ruff check src/     # should pass with no issues
 ### Goal
 Define all core Pydantic models for the intent system. These models serve as BOTH the type definitions AND runtime validators — Pydantic v2 gives us both in one place.
 
-### File: `src/sdol/types/intent.py`
+### File: `src/provena/types/intent.py`
 
 ```python
 """
@@ -474,12 +474,12 @@ def validate_intent(data: dict[str, Any]) -> BaseIntent:
     return adapter.validate_python(data)
 ```
 
-### File: `src/sdol/types/errors.py`
+### File: `src/provena/types/errors.py`
 
 ```python
 """
-Error hierarchy for SDOL.
-Every public method that can fail throws a typed SDOLError subclass.
+Error hierarchy for Provena.
+Every public method that can fail throws a typed ProvenaError subclass.
 Errors always carry context for debugging.
 """
 
@@ -489,7 +489,7 @@ from enum import StrEnum
 from typing import Any
 
 
-class SDOLErrorCode(StrEnum):
+class ProvenaErrorCode(StrEnum):
     INVALID_INTENT = "INVALID_INTENT"
     NO_CAPABLE_CONNECTOR = "NO_CAPABLE_CONNECTOR"
     CONNECTOR_TIMEOUT = "CONNECTOR_TIMEOUT"
@@ -502,13 +502,13 @@ class SDOLErrorCode(StrEnum):
     VALIDATION_ERROR = "VALIDATION_ERROR"
 
 
-class SDOLError(Exception):
-    """Base error class for all SDOL errors."""
+class ProvenaError(Exception):
+    """Base error class for all Provena errors."""
 
     def __init__(
         self,
         message: str,
-        code: SDOLErrorCode,
+        code: ProvenaErrorCode,
         context: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
@@ -516,35 +516,35 @@ class SDOLError(Exception):
         self.context = context or {}
 
 
-class InvalidIntentError(SDOLError):
+class InvalidIntentError(ProvenaError):
     def __init__(self, message: str, validation_errors: list[Any]) -> None:
-        super().__init__(message, SDOLErrorCode.INVALID_INTENT, {"validation_errors": validation_errors})
+        super().__init__(message, ProvenaErrorCode.INVALID_INTENT, {"validation_errors": validation_errors})
         self.validation_errors = validation_errors
 
 
-class NoCapableConnectorError(SDOLError):
+class NoCapableConnectorError(ProvenaError):
     def __init__(self, intent_type: str) -> None:
         super().__init__(
             f"No registered connector can handle intent type: {intent_type}",
-            SDOLErrorCode.NO_CAPABLE_CONNECTOR,
+            ProvenaErrorCode.NO_CAPABLE_CONNECTOR,
             {"intent_type": intent_type},
         )
 
 
-class ConnectorTimeoutError(SDOLError):
+class ConnectorTimeoutError(ProvenaError):
     def __init__(self, connector_id: str, budget_ms: int, actual_ms: float) -> None:
         super().__init__(
             f"Connector {connector_id} timed out: {actual_ms:.0f}ms > {budget_ms}ms budget",
-            SDOLErrorCode.CONNECTOR_TIMEOUT,
+            ProvenaErrorCode.CONNECTOR_TIMEOUT,
             {"connector_id": connector_id, "budget_ms": budget_ms, "actual_ms": actual_ms},
         )
 
 
-class MCPTransportError(SDOLError):
+class MCPTransportError(ProvenaError):
     def __init__(self, server_id: str, detail: str) -> None:
         super().__init__(
             f"MCP transport error for server {server_id}: {detail}",
-            SDOLErrorCode.MCP_TRANSPORT_ERROR,
+            ProvenaErrorCode.MCP_TRANSPORT_ERROR,
             {"server_id": server_id, "detail": detail},
         )
 ```
@@ -557,7 +557,7 @@ class MCPTransportError(SDOLError):
 import pytest
 from pydantic import ValidationError
 
-from sdol.types.intent import (
+from provena.types.intent import (
     AggregateAnalysisIntent,
     PointLookupIntent,
     TemporalTrendIntent,
@@ -665,10 +665,10 @@ class TestValidateIntent:
 ```
 
 ### Completion Check
-- All type files pass `mypy src/sdol --strict`
+- All type files pass `mypy src/provena --strict`
 - `pytest tests/unit/types/` passes all tests
 - `validate_intent()` correctly discriminates all 8 intent types
-- Export everything from `src/sdol/types/__init__.py`
+- Export everything from `src/provena/types/__init__.py`
 
 ---
 
@@ -677,10 +677,10 @@ class TestValidateIntent:
 ### Goal
 Implement provenance metadata and trust scoring. Every retrieved data element gets tagged with source, consistency, precision, and freshness — and a composite trust score.
 
-### File: `src/sdol/types/provenance.py`
+### File: `src/provena/types/provenance.py`
 
 ```python
-"""Provenance and trust types — the epistemic foundation of SDOL."""
+"""Provenance and trust types — the epistemic foundation of Provena."""
 
 from __future__ import annotations
 
@@ -745,14 +745,14 @@ class TrustScore(BaseModel):
     label: Literal["high", "medium", "low", "uncertain"]
 ```
 
-### File: `src/sdol/core/provenance/envelope.py`
+### File: `src/provena/core/provenance/envelope.py`
 
 ```python
 """Factory functions for creating ProvenanceEnvelopes."""
 
 from datetime import datetime, timezone
 
-from sdol.types.provenance import (
+from provena.types.provenance import (
     ConsistencyGuarantee,
     PrecisionClass,
     ProvenanceEnvelope,
@@ -799,7 +799,7 @@ def create_default_envelope(source_system: str) -> ProvenanceEnvelope:
     )
 ```
 
-### File: `src/sdol/core/provenance/trust_scorer.py`
+### File: `src/provena/core/provenance/trust_scorer.py`
 
 ```python
 """
@@ -812,7 +812,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from sdol.types.provenance import (
+from provena.types.provenance import (
     ConsistencyGuarantee,
     PrecisionClass,
     ProvenanceEnvelope,
@@ -910,8 +910,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from sdol.core.provenance.trust_scorer import TrustScorer, TrustScorerConfig
-from sdol.types.provenance import (
+from provena.core.provenance.trust_scorer import TrustScorer, TrustScorerConfig
+from provena.types.provenance import (
     ConsistencyGuarantee,
     PrecisionClass,
     ProvenanceEnvelope,
@@ -986,7 +986,7 @@ class TestTrustScorer:
 ### Goal
 Build the Context Compiler that assembles retrieval results into typed context slots with provenance, detects conflicts, and produces structured context frames.
 
-### File: `src/sdol/types/context.py`
+### File: `src/provena/types/context.py`
 
 ```python
 """Context frame types — the structured replacement for flat context windows."""
@@ -998,7 +998,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from sdol.types.provenance import ProvenanceEnvelope, TrustScore
+from provena.types.provenance import ProvenanceEnvelope, TrustScore
 
 
 class ContextSlotType(StrEnum):
@@ -1063,7 +1063,7 @@ class ContextFrame(BaseModel):
     assembled_at: str
 ```
 
-### File: `src/sdol/core/context/context_compiler.py`
+### File: `src/provena/core/context/context_compiler.py`
 
 ```python
 """
@@ -1077,18 +1077,18 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sdol.core.context.conflict_detector import ConflictDetector
-from sdol.core.context.conflict_resolver import ConflictResolver
-from sdol.core.context.typed_slot import INTERPRETATION_NOTES
-from sdol.core.provenance.trust_scorer import TrustScorer
-from sdol.types.context import (
+from provena.core.context.conflict_detector import ConflictDetector
+from provena.core.context.conflict_resolver import ConflictResolver
+from provena.core.context.typed_slot import INTERPRETATION_NOTES
+from provena.core.provenance.trust_scorer import TrustScorer
+from provena.types.context import (
     ContextElement,
     ContextFrame,
     ContextFrameStats,
     ContextSlot,
     ContextSlotType,
 )
-from sdol.types.provenance import ProvenanceEnvelope
+from provena.types.provenance import ProvenanceEnvelope
 
 
 class CompilerInput:
@@ -1186,12 +1186,12 @@ class ContextCompiler:
         self._counter = 0
 ```
 
-### File: `src/sdol/core/context/typed_slot.py`
+### File: `src/provena/core/context/typed_slot.py`
 
 ```python
 """Interpretation notes per slot type."""
 
-from sdol.types.context import ContextSlotType
+from provena.types.context import ContextSlotType
 
 INTERPRETATION_NOTES: dict[ContextSlotType, str] = {
     ContextSlotType.STRUCTURED: (
@@ -1217,7 +1217,7 @@ INTERPRETATION_NOTES: dict[ContextSlotType, str] = {
 }
 ```
 
-### File: `src/sdol/core/context/conflict_detector.py`
+### File: `src/provena/core/context/conflict_detector.py`
 
 Implement `ConflictDetector` with a `detect(elements: list[ContextElement])` method that:
 - Groups elements by `entity_key` (skip elements with `entity_key=None`)
@@ -1226,7 +1226,7 @@ Implement `ConflictDetector` with a `detect(elements: list[ContextElement])` met
 - Only compare elements in STRUCTURED and TEMPORAL slots (text conflicts are too fuzzy)
 - Return list of detected conflicts (without resolutions — those come from `ConflictResolver`)
 
-### File: `src/sdol/core/context/conflict_resolver.py`
+### File: `src/provena/core/context/conflict_resolver.py`
 
 Implement `ConflictResolver` with a `resolve(conflict)` method that applies these rules:
 - If freshness difference > 10× staleness window → `prefer_freshest`
@@ -1253,7 +1253,7 @@ The resolver should return a new `ContextConflict` with the `resolution` field f
 ### Goal
 Define the abstract connector contract that all typed connectors inherit from.
 
-### File: `src/sdol/types/connector.py`
+### File: `src/provena/types/connector.py`
 
 ```python
 """Connector result and health types."""
@@ -1264,8 +1264,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from sdol.types.context import ContextSlotType
-from sdol.types.provenance import ProvenanceEnvelope
+from provena.types.context import ContextSlotType
+from provena.types.provenance import ProvenanceEnvelope
 
 
 class ConnectorResultMeta(BaseModel):
@@ -1293,7 +1293,7 @@ class ConnectorHealth(BaseModel):
     message: str | None = None
 ```
 
-### File: `src/sdol/types/capability.py`
+### File: `src/provena/types/capability.py`
 
 ```python
 """Capability declarations for typed connectors."""
@@ -1328,7 +1328,7 @@ class ConnectorCapability(BaseModel):
     available_entities: list[str]
 ```
 
-### File: `src/sdol/connectors/base_connector.py`
+### File: `src/provena/connectors/base_connector.py`
 
 ```python
 """
@@ -1346,9 +1346,9 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any
 
-from sdol.types.capability import ConnectorCapability
-from sdol.types.connector import ConnectorHealth, ConnectorResult
-from sdol.types.intent import BaseIntent
+from provena.types.capability import ConnectorCapability
+from provena.types.connector import ConnectorHealth, ConnectorResult
+from provena.types.intent import BaseIntent
 
 
 class BaseConnector(ABC):
@@ -1424,7 +1424,7 @@ class BaseConnector(ABC):
 Each connector takes a pluggable executor to decouple from real databases:
 
 ```python
-# Put this in src/sdol/connectors/executor.py
+# Put this in src/provena/connectors/executor.py
 
 from __future__ import annotations
 
@@ -1472,7 +1472,7 @@ Build three reference connectors: OLAP, OLTP, and Document/Vector. Each demonstr
 
 ### IMPORTANT: These connectors don't connect to real databases. They build optimized query strings/objects and return them via the pluggable `QueryExecutor`. This lets us test query optimization without database dependencies. The MCP layer (Milestone 8) provides actual execution.
 
-### File: `src/sdol/connectors/olap/olap_connector.py`
+### File: `src/provena/connectors/olap/olap_connector.py`
 
 The OLAP connector handles `aggregate_analysis` and `temporal_trend` intents.
 
@@ -1509,7 +1509,7 @@ Provenance to set:
 - `consistency`: `ConsistencyGuarantee.STRONG`
 - `slot_type`: `ContextSlotType.STRUCTURED` for aggregations, `ContextSlotType.TEMPORAL` for trends
 
-### File: `src/sdol/connectors/oltp/oltp_connector.py`
+### File: `src/provena/connectors/oltp/oltp_connector.py`
 
 Handles `point_lookup` and simple `aggregate_analysis` intents.
 
@@ -1520,7 +1520,7 @@ Key optimizations:
 
 Provenance: `precision=EXACT`, `consistency=READ_COMMITTED`, `slot_type=STRUCTURED`
 
-### File: `src/sdol/connectors/document/document_connector.py`
+### File: `src/provena/connectors/document/document_connector.py`
 
 Handles `semantic_search` intents.
 
@@ -1552,7 +1552,7 @@ Provenance: `precision=SIMILARITY_RANKED`, `consistency=EVENTUAL`, `slot_type=UN
 ### Goal
 Build the registry that connectors register with and that the Semantic Router queries.
 
-### File: `src/sdol/connectors/capability_registry.py`
+### File: `src/provena/connectors/capability_registry.py`
 
 ```python
 """
@@ -1564,9 +1564,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sdol.connectors.base_connector import BaseConnector
-from sdol.types.capability import ConnectorCapability
-from sdol.types.intent import BaseIntent
+from provena.connectors.base_connector import BaseConnector
+from provena.types.capability import ConnectorCapability
+from provena.types.intent import BaseIntent
 
 
 @dataclass
@@ -1652,9 +1652,9 @@ class CapabilityRegistry:
 ## 9. Milestone 7: Semantic Router & Query Planner
 
 ### Goal
-Build the Semantic Router — the orchestration brain of SDOL.
+Build the Semantic Router — the orchestration brain of Provena.
 
-### File: `src/sdol/types/router.py`
+### File: `src/provena/types/router.py`
 
 ```python
 """Router and execution plan types."""
@@ -1665,8 +1665,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from sdol.types.connector import ConnectorResult
-from sdol.types.intent import BaseIntent
+from provena.types.connector import ConnectorResult
+from provena.types.intent import BaseIntent
 
 
 class ExecutionStep(BaseModel):
@@ -1703,14 +1703,14 @@ class ExecutionResult(BaseModel):
     errors: list[ExecutionError]
 ```
 
-### File: `src/sdol/core/router/intent_decomposer.py`
+### File: `src/provena/core/router/intent_decomposer.py`
 
 ```python
 """Decomposes composite intents into atomic sub-intents."""
 
 from __future__ import annotations
 
-from sdol.types.intent import BaseIntent, CompositeIntent, Intent
+from provena.types.intent import BaseIntent, CompositeIntent, Intent
 
 
 class IntentDecomposer:
@@ -1746,7 +1746,7 @@ class IntentDecomposer:
         pass
 ```
 
-### File: `src/sdol/core/router/cost_estimator.py`
+### File: `src/provena/core/router/cost_estimator.py`
 
 Implement `CostEstimator` that:
 - Estimates latency from connector's declared `estimated_latency_ms` + 10ms overhead
@@ -1754,7 +1754,7 @@ Implement `CostEstimator` that:
 - Accounts for parallelism: parallel steps contribute `max(latencies)`, not `sum`
 - Tracks historical actuals to refine future estimates (simple running average)
 
-### File: `src/sdol/core/router/query_planner.py`
+### File: `src/provena/core/router/query_planner.py`
 
 ```python
 """
@@ -1768,12 +1768,12 @@ QueryPlanner generates execution plans for intents.
 
 from __future__ import annotations
 
-from sdol.connectors.capability_registry import CapabilityRegistry
-from sdol.core.router.cost_estimator import CostEstimator
-from sdol.core.router.intent_decomposer import IntentDecomposer
-from sdol.types.errors import NoCapableConnectorError
-from sdol.types.intent import BaseIntent, CompositeIntent
-from sdol.types.router import ExecutionPlan, ExecutionStep
+from provena.connectors.capability_registry import CapabilityRegistry
+from provena.core.router.cost_estimator import CostEstimator
+from provena.core.router.intent_decomposer import IntentDecomposer
+from provena.types.errors import NoCapableConnectorError
+from provena.types.intent import BaseIntent, CompositeIntent
+from provena.types.router import ExecutionPlan, ExecutionStep
 
 
 class QueryPlanner:
@@ -1829,7 +1829,7 @@ class QueryPlanner:
         )
 ```
 
-### File: `src/sdol/core/router/semantic_router.py`
+### File: `src/provena/core/router/semantic_router.py`
 
 ```python
 """
@@ -1842,12 +1842,12 @@ from __future__ import annotations
 import asyncio
 import time
 
-from sdol.connectors.capability_registry import CapabilityRegistry
-from sdol.core.context.context_compiler import CompilerInput, ContextCompiler
-from sdol.core.router.query_planner import QueryPlanner
-from sdol.types.context import ContextFrame
-from sdol.types.intent import BaseIntent
-from sdol.types.router import ExecutionError, ExecutionPlan, ExecutionResult
+from provena.connectors.capability_registry import CapabilityRegistry
+from provena.core.context.context_compiler import CompilerInput, ContextCompiler
+from provena.core.router.query_planner import QueryPlanner
+from provena.types.context import ContextFrame
+from provena.types.intent import BaseIntent
+from provena.types.router import ExecutionError, ExecutionPlan, ExecutionResult
 
 
 class SemanticRouter:
@@ -1966,13 +1966,13 @@ class SemanticRouter:
 ## 10. Milestone 8: MCP Integration Layer
 
 ### Goal
-Build the adapter between SDOL typed connectors and MCP servers.
+Build the adapter between Provena typed connectors and MCP servers.
 
-### File: `src/sdol/mcp/mcp_adapter.py`
+### File: `src/provena/mcp/mcp_adapter.py`
 
 ```python
 """
-Adapter between SDOL typed connectors and MCP servers.
+Adapter between Provena typed connectors and MCP servers.
 Typed connectors call this instead of hitting databases directly.
 """
 
@@ -1981,7 +1981,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from sdol.types.errors import MCPTransportError
+from provena.types.errors import MCPTransportError
 
 
 @dataclass
@@ -2002,7 +2002,7 @@ class MCPToolCall:
 @dataclass
 class MCPResponse:
     content: Any
-    sdol_metadata: dict[str, Any] | None = None  # SDOL extension (may be absent)
+    provena_metadata: dict[str, Any] | None = None  # Provena extension (may be absent)
 
 
 class MCPTransport(Protocol):
@@ -2038,17 +2038,17 @@ class MCPAdapter:
         return await self._transport.send(server, tool_call)
 ```
 
-### File: `src/sdol/mcp/response_wrapper.py`
+### File: `src/provena/mcp/response_wrapper.py`
 
 Implement `ResponseWrapper` that:
-- Extracts SDOL metadata from `MCPResponse.sdol_metadata` if present
+- Extracts Provena metadata from `MCPResponse.provena_metadata` if present
 - Falls back to `MCPServerConfig.declared_*` properties if metadata absent
 - Falls back to conservative defaults (`best_effort`, `estimated`, `None` staleness) as last resort
 - Returns a `ProvenanceEnvelope`
 
 ### Tests (`tests/unit/mcp/`):
 - `test_mcp_adapter.py`: routes calls to correct server; raises on unknown server
-- `test_response_wrapper.py`: extracts SDOL metadata when present; falls back to declared defaults; uses conservative defaults as last resort
+- `test_response_wrapper.py`: extracts Provena metadata when present; falls back to declared defaults; uses conservative defaults as last resort
 
 ### Completion Check
 - MCPAdapter + ResponseWrapper produce correct ProvenanceEnvelopes
@@ -2061,7 +2061,7 @@ Implement `ResponseWrapper` that:
 ### Goal
 Build the Epistemic Tracker — the agent's confidence-reasoning module.
 
-### File: `src/sdol/core/epistemic/epistemic_tracker.py`
+### File: `src/provena/core/epistemic/epistemic_tracker.py`
 
 ```python
 """
@@ -2071,8 +2071,8 @@ Provides trust-weighted reasoning support and prompt injection.
 
 from __future__ import annotations
 
-from sdol.types.context import ContextElement, ContextFrame
-from sdol.types.provenance import TrustScore
+from provena.types.context import ContextElement, ContextFrame
+from provena.types.provenance import TrustScore
 
 
 class EpistemicTracker:
@@ -2189,9 +2189,9 @@ class EpistemicTracker:
 ## 12. Milestone 10: Agent SDK & Intent Formulator
 
 ### Goal
-Build the high-level SDK that agent frameworks use to interact with SDOL.
+Build the high-level SDK that agent frameworks use to interact with Provena.
 
-### File: `src/sdol/agent/intent_formulator.py`
+### File: `src/provena/agent/intent_formulator.py`
 
 ```python
 """
@@ -2204,7 +2204,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from sdol.types.intent import (
+from provena.types.intent import (
     AggregateAnalysisIntent,
     BaseIntent,
     CompositeIntent,
@@ -2297,32 +2297,32 @@ class IntentFormulator:
         )
 ```
 
-### File: `src/sdol/agent/agent_sdk.py`
+### File: `src/provena/agent/agent_sdk.py`
 
 ```python
 """
-High-level SDK — the main public API of SDOL.
+High-level SDK — the main public API of Provena.
 Agent frameworks instantiate this and call query().
 """
 
 from __future__ import annotations
 
-from sdol.agent.intent_formulator import IntentFormulator
-from sdol.core.epistemic.epistemic_tracker import EpistemicTracker
-from sdol.core.router.semantic_router import SemanticRouter
-from sdol.types.context import ContextFrame
-from sdol.types.intent import BaseIntent
+from provena.agent.intent_formulator import IntentFormulator
+from provena.core.epistemic.epistemic_tracker import EpistemicTracker
+from provena.core.router.semantic_router import SemanticRouter
+from provena.types.context import ContextFrame
+from provena.types.intent import BaseIntent
 
 
-class SDOL:
+class Provena:
     """
     Main entry point for agent frameworks.
 
     Usage:
-        sdol = SDOL(router)
-        intent = sdol.formulator.point_lookup("customer", {"id": "C-1042"})
-        frame = await sdol.query(intent)
-        print(sdol.get_epistemic_context())
+        provena = Provena(router)
+        intent = provena.formulator.point_lookup("customer", {"id": "C-1042"})
+        frame = await provena.query(intent)
+        print(provena.get_epistemic_context())
     """
 
     def __init__(self, router: SemanticRouter) -> None:
@@ -2348,8 +2348,8 @@ class SDOL:
 ### Tests (`tests/unit/agent/`):
 - IntentFormulator produces valid intents for all builder methods
 - IntentFormulator rejects invalid parameters (Pydantic raises `ValidationError`)
-- `SDOL.query` routes through router and ingests into tracker
-- `SDOL.get_epistemic_context` returns accurate summary after queries
+- `Provena.query` routes through router and ingests into tracker
+- `Provena.get_epistemic_context` returns accurate summary after queries
 
 ### Completion Check
 - Agent SDK provides clean API
@@ -2363,7 +2363,7 @@ class SDOL:
 ### Goal
 Implement intelligent cross-source join strategies.
 
-### File: `src/sdol/core/router/join_optimizer.py`
+### File: `src/provena/core/router/join_optimizer.py`
 
 ```python
 """
@@ -2377,8 +2377,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Callable, Awaitable
 
-from sdol.types.connector import ConnectorResult
-from sdol.types.router import ExecutionStep
+from provena.types.connector import ConnectorResult
+from provena.types.router import ExecutionStep
 
 
 class JoinStrategy(StrEnum):
@@ -2453,26 +2453,26 @@ class JoinOptimizer:
 ### Goal
 Wire everything together, create examples, and validate the full stack.
 
-### File: `src/sdol/__init__.py` (public API)
+### File: `src/provena/__init__.py` (public API)
 
 ```python
-"""SDOL — Semantic Data Orchestration Layer."""
+"""Provena — Epistemic provenance for AI agents."""
 
-from sdol.agent.agent_sdk import SDOL
-from sdol.agent.intent_formulator import IntentFormulator
-from sdol.connectors.base_connector import BaseConnector
-from sdol.connectors.capability_registry import CapabilityRegistry
-from sdol.connectors.document.document_connector import DocumentConnector
-from sdol.connectors.olap.olap_connector import OLAPConnector
-from sdol.connectors.oltp.oltp_connector import OLTPConnector
-from sdol.core.context.context_compiler import ContextCompiler
-from sdol.core.epistemic.epistemic_tracker import EpistemicTracker
-from sdol.core.provenance.trust_scorer import TrustScorer
-from sdol.core.router.semantic_router import SemanticRouter
-from sdol.mcp.mcp_adapter import MCPAdapter
+from provena.agent.agent_sdk import Provena
+from provena.agent.intent_formulator import IntentFormulator
+from provena.connectors.base_connector import BaseConnector
+from provena.connectors.capability_registry import CapabilityRegistry
+from provena.connectors.document.document_connector import DocumentConnector
+from provena.connectors.olap.olap_connector import OLAPConnector
+from provena.connectors.oltp.oltp_connector import OLTPConnector
+from provena.core.context.context_compiler import ContextCompiler
+from provena.core.epistemic.epistemic_tracker import EpistemicTracker
+from provena.core.provenance.trust_scorer import TrustScorer
+from provena.core.router.semantic_router import SemanticRouter
+from provena.mcp.mcp_adapter import MCPAdapter
 
 __all__ = [
-    "SDOL",
+    "Provena",
     "IntentFormulator",
     "SemanticRouter",
     "ContextCompiler",
@@ -2499,8 +2499,8 @@ Spans OLAP (churn scores), OLTP (tickets), time-series (usage).
 
 import asyncio
 
-from sdol import (
-    SDOL,
+from provena import (
+    Provena,
     CapabilityRegistry,
     ContextCompiler,
     OLAPConnector,
@@ -2508,11 +2508,11 @@ from sdol import (
     SemanticRouter,
     TrustScorer,
 )
-from sdol.connectors.executor import MockQueryExecutor
-from sdol.core.provenance.trust_scorer import TrustScorerConfig
-from sdol.core.router.cost_estimator import CostEstimator
-from sdol.core.router.intent_decomposer import IntentDecomposer
-from sdol.core.router.query_planner import QueryPlanner
+from provena.connectors.executor import MockQueryExecutor
+from provena.core.provenance.trust_scorer import TrustScorerConfig
+from provena.core.router.cost_estimator import CostEstimator
+from provena.core.router.intent_decomposer import IntentDecomposer
+from provena.core.router.query_planner import QueryPlanner
 
 
 async def main() -> None:
@@ -2538,26 +2538,26 @@ async def main() -> None:
     planner = QueryPlanner(registry, IntentDecomposer(), CostEstimator())
     router = SemanticRouter(planner, compiler, registry)
 
-    # 3. Create SDOL instance
-    sdol = SDOL(router)
+    # 3. Create Provena instance
+    provena = Provena(router)
 
     # 4. Build composite intent
-    intent = sdol.formulator.composite(
+    intent = provena.formulator.composite(
         sub_intents=[
-            sdol.formulator.aggregate_analysis(
+            provena.formulator.aggregate_analysis(
                 entity="customer_churn_scores",
                 measures=[{"field": "churn_probability", "aggregation": "max"}],
                 dimensions=["customer_id", "region"],
                 having=[{"field": "churn_probability", "operator": "gt", "value": 0.7}],
             ),
-            sdol.formulator.point_lookup("support_tickets", {"status": "unresolved"}),
+            provena.formulator.point_lookup("support_tickets", {"status": "unresolved"}),
         ],
         fusion_operator="intersect",
         fusion_key="customer_id",
     )
 
     # 5. Execute
-    frame = await sdol.query(intent)
+    frame = await provena.query(intent)
 
     # 6. Inspect
     print("=== Context Frame Stats ===")
@@ -2567,7 +2567,7 @@ async def main() -> None:
     print(f"  Conflicts: {len(frame.conflicts)}")
     print()
     print("=== Epistemic Context ===")
-    print(sdol.get_epistemic_context())
+    print(provena.get_epistemic_context())
 
 
 if __name__ == "__main__":
@@ -2591,14 +2591,14 @@ Write a test that:
 - Example script runs: `python examples/cross_source_query.py`
 - `pytest tests/integration/` passes
 - `pytest` (all tests) passes
-- `mypy src/sdol --strict` passes
+- `mypy src/provena --strict` passes
 - `ruff check src/` passes
 
 ---
 
 ## Appendix A: Full Type Reference
 
-All types live in `src/sdol/types/`. Dependency graph:
+All types live in `src/provena/types/`. Dependency graph:
 
 ```
 intent.py          (no internal deps)
@@ -2622,9 +2622,9 @@ errors.py          (no internal deps)
 ## Appendix B: Error Handling Strategy
 
 Every public method that can fail should:
-1. Raise typed `SDOLError` subclasses (never bare `Exception`)
+1. Raise typed `ProvenaError` subclasses (never bare `Exception`)
 2. Include context in the error (`intent_id`, `connector_id`, etc.)
-3. Be catchable by error code: `error.code == SDOLErrorCode.CONNECTOR_TIMEOUT`
+3. Be catchable by error code: `error.code == ProvenaErrorCode.CONNECTOR_TIMEOUT`
 
 For `SemanticRouter`:
 - If ONE connector in parallel execution fails → continue with partial results
@@ -2650,8 +2650,8 @@ Test cross-module flows with `MockQueryExecutor` and `MockMCPTransport`.
 Create shared fixtures:
 ```python
 import pytest
-from sdol.connectors.executor import MockQueryExecutor
-from sdol.core.provenance.trust_scorer import TrustScorer
+from provena.connectors.executor import MockQueryExecutor
+from provena.core.provenance.trust_scorer import TrustScorer
 
 @pytest.fixture
 def trust_scorer() -> TrustScorer:
@@ -2676,8 +2676,8 @@ def mock_executor() -> MockQueryExecutor:
 
 ### Run all checks:
 ```bash
-pytest --cov=sdol --cov-report=term-missing
-mypy src/sdol --strict
+pytest --cov=provena --cov-report=term-missing
+mypy src/provena --strict
 ruff check src/
 ```
 

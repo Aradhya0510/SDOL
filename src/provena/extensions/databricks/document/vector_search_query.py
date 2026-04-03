@@ -29,7 +29,7 @@ class DatabricksVSQuery:
 
 
 def _build_filter_string(filters: list[FilterClause]) -> str:
-    """Convert SDOL FilterClauses to a Databricks VS SQL-style filter string.
+    """Convert Provena FilterClauses to a Databricks VS SQL-style filter string.
 
     Databricks VS accepts filter expressions as SQL WHERE-clause fragments,
     e.g. ``"category = 'electronics' AND price < 100"``.

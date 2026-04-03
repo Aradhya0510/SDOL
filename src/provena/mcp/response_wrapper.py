@@ -1,4 +1,4 @@
-"""Wraps MCP responses with SDOL provenance metadata."""
+"""Wraps MCP responses with Provena provenance metadata."""
 
 from __future__ import annotations
 
@@ -23,15 +23,15 @@ class ResponseWrapper:
     ) -> ProvenanceEnvelope:
         """
         Build a ProvenanceEnvelope from the MCP response.
-        Priority: sdol_metadata > server declared defaults > conservative defaults.
+        Priority: provena_metadata > server declared defaults > conservative defaults.
         """
-        if response.sdol_metadata:
-            return self._from_sdol_metadata(response.sdol_metadata, server_config)
+        if response.provena_metadata:
+            return self._from_provena_metadata(response.provena_metadata, server_config)
         if self._has_declared_defaults(server_config):
             return self._from_server_defaults(server_config)
         return self._conservative_defaults(server_config)
 
-    def _from_sdol_metadata(
+    def _from_provena_metadata(
         self,
         metadata: dict[str, object],
         config: MCPServerConfig,

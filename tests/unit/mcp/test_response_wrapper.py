@@ -6,11 +6,11 @@ from provena.types.provenance import ConsistencyGuarantee, PrecisionClass, Retri
 
 
 class TestResponseWrapper:
-    def test_extracts_sdol_metadata(self) -> None:
+    def test_extracts_provena_metadata(self) -> None:
         wrapper = ResponseWrapper()
         response = MCPResponse(
             content=[],
-            sdol_metadata={
+            provena_metadata={
                 "retrieval_method": "direct_query",
                 "consistency": "strong",
                 "precision": "exact",

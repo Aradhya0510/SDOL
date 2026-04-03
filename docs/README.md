@@ -1,6 +1,6 @@
-# SDOL Documentation
+# Provena Documentation
 
-Complete documentation for the Semantic Data Orchestration Layer.
+Complete documentation for Provena.
 
 ---
 
@@ -12,7 +12,7 @@ Complete documentation for the Semantic Data Orchestration Layer.
 | **Architecture** | [architecture.md](architecture.md) | Detailed system design: nine composable layers, data flow, type system, directory structure, and design principles |
 | **Typed Connectors Guide** | [typed-connectors-guide.md](typed-connectors-guide.md) | Three-tier connector architecture, built-in connectors (OLAP/OLTP/Document), QueryExecutor protocol, building custom connectors, suitability scoring |
 | **Databricks Guide** | [databricks-guide.md](databricks-guide.md) | Databricks-specific integration: DBSQL (Photon/OLAP), Lakebase (OLTP), and Vector Search (Document), Unity Catalog, cross-paradigm queries, writing production QueryExecutors |
-| **Implementation Spec** | [implementation-spec.md](implementation-spec.md) | Original milestone-based specification used to build SDOL — 13 milestones covering project bootstrap through end-to-end integration |
+| **Implementation Spec** | [implementation-spec.md](implementation-spec.md) | Original milestone-based specification used to build Provena — 13 milestones covering project bootstrap through end-to-end integration |
 
 ---
 
@@ -29,6 +29,6 @@ The [Implementation Spec](implementation-spec.md) is a reference document — us
 
 ## Project Overview
 
-SDOL sits between AI agents and their data sources. Agents declare *what* they want (typed intents) — never *how* to get it. SDOL handles routing, execution, provenance tracking, trust scoring, conflict resolution, and epistemic context generation automatically.
+Provena sits between AI agents and their data sources. Agents declare *what* they want (typed intents) — never *how* to get it. Provena handles routing, execution, provenance tracking, trust scoring, conflict resolution, and epistemic context generation automatically.
 
 For a high-level introduction, see the [main README](../README.md).

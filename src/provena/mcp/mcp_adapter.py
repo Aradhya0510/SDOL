@@ -1,5 +1,5 @@
 """
-Adapter between SDOL typed connectors and MCP servers.
+Adapter between Provena typed connectors and MCP servers.
 Typed connectors call this instead of hitting databases directly.
 """
 
@@ -29,7 +29,7 @@ class MCPToolCall:
 @dataclass
 class MCPResponse:
     content: Any
-    sdol_metadata: dict[str, Any] | None = None
+    provena_metadata: dict[str, Any] | None = None
 
 
 class MCPTransport(Protocol):

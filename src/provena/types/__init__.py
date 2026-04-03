@@ -1,4 +1,4 @@
-"""SDOL type definitions."""
+"""Provena type definitions."""
 
 from provena.types.capability import (
     ConnectorCapabilities,
@@ -20,8 +20,8 @@ from provena.types.errors import (
     InvalidIntentError,
     MCPTransportError,
     NoCapableConnectorError,
-    SDOLError,
-    SDOLErrorCode,
+    ProvenaError,
+    ProvenaErrorCode,
 )
 from provena.types.intent import (
     AggregateAnalysisIntent,
@@ -98,8 +98,8 @@ __all__ = [
     "PrecisionClass",
     "ProvenanceEnvelope",
     "RetrievalMethod",
-    "SDOLError",
-    "SDOLErrorCode",
+    "ProvenaError",
+    "ProvenaErrorCode",
     "SemanticSearchIntent",
     "TemporalTrendIntent",
     "TimeWindow",

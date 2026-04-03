@@ -8,7 +8,7 @@ Spans OLAP (churn scores), OLTP (tickets), time-series (usage).
 import asyncio
 
 from provena import (
-    SDOL,
+    Provena,
     CapabilityRegistry,
     ContextCompiler,
     GenericOLAPConnector,
@@ -44,7 +44,7 @@ async def main() -> None:
     planner = QueryPlanner(registry, IntentDecomposer(), CostEstimator())
     router = SemanticRouter(planner, compiler, registry)
 
-    sdol = SDOL(router)
+    provena = Provena(router)
 
     intent = provena.formulator.composite(
         sub_intents=[

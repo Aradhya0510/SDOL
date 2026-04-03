@@ -31,8 +31,8 @@ dbutils.widgets.text("catalog", "users")
 dbutils.widgets.text("schema", "default")
 dbutils.widgets.text("llm_endpoint", "databricks-claude-sonnet-4-6")
 dbutils.widgets.text("model_endpoints", "")
-dbutils.widgets.text("sdol_project_root", "/Workspace/Users/{user}/SDOL")
-dbutils.widgets.text("vs_endpoint", "sdol_fleet_vs")
+dbutils.widgets.text("sdol_project_root", "/Workspace/Users/{user}/Provena")
+dbutils.widgets.text("vs_endpoint", "provena_fleet_vs")
 dbutils.widgets.text("num_runs", "1")
 dbutils.widgets.text("input_price_per_1k_tokens", "0.003")
 dbutils.widgets.text("output_price_per_1k_tokens", "0.015")
@@ -81,7 +81,7 @@ except ImportError:
     else:
         raise ImportError(f"Provena not found at {resolved}")
 
-print(f"Provena loaded — {sdol.__all__[:5]}...")
+print(f"Provena loaded — {provena.__all__[:5]}...")
 
 # COMMAND ----------
 
@@ -116,7 +116,7 @@ from provena.types.provenance import ConsistencyGuarantee
 
 
 class SparkSQLExecutor:
-    """Bridges SDOL's QueryExecutor protocol with SparkSession. Errors propagate."""
+    """Bridges Provena's QueryExecutor protocol with SparkSession. Errors propagate."""
 
     async def execute(self, query) -> dict:
         sql_str = query.sql
@@ -132,7 +132,7 @@ class SparkSQLExecutor:
 
 
 class DatabricksVectorSearchExecutor:
-    """Bridges SDOL's QueryExecutor protocol with Databricks Vector Search.
+    """Bridges Provena's QueryExecutor protocol with Databricks Vector Search.
 
     Accepts DatabricksVSQuery objects produced by the
     DatabricksVectorSearchConnector's synthesize_query stage.
@@ -216,7 +216,7 @@ trust_cfg = TrustScorerConfig(source_authority_map={
 compiler = ContextCompiler(TrustScorer(trust_cfg))
 planner = QueryPlanner(registry, IntentDecomposer(), CostEstimator())
 router = SemanticRouter(planner, compiler, registry)
-sdol = ProvenaEngine(router)
+provena = ProvenaEngine(router)
 
 print("Provena fleet pipeline ready")
 print(f"  OLTP  entities: {oltp_connector._available_entities}")
@@ -267,7 +267,7 @@ def _format_frame(frame):
         "results": results,
         "result_count": len(results),
         "conflicts": conflicts,
-        "data_confidence": sdol.get_epistemic_context(),
+        "data_confidence": provena.get_epistemic_context(),
     }
     if frame.trust_summary:
         output["trust_summary"] = {
@@ -341,8 +341,8 @@ def sdol_machine_lookup(machine_id: str, fields: str = "") -> str:
     """
     try:
         field_list = [f.strip() for f in fields.split(",") if f.strip()] or None
-        intent = sdol.formulator.point_lookup("fleet_machines", {"machine_id": machine_id}, fields=field_list)
-        frame = asyncio.run(sdol.query(intent))
+        intent = provena.formulator.point_lookup("fleet_machines", {"machine_id": machine_id}, fields=field_list)
+        frame = asyncio.run(provena.query(intent))
         return _format_frame(frame)
     except Exception as exc:
         return json.dumps({"error": str(exc)})
@@ -375,10 +375,10 @@ def sdol_fleet_aggregate(entity: str, measures: str, dimensions: str, filters: s
         ob_dir = parts[1] if len(parts) > 1 and parts[1] in ("asc", "desc") else "desc"
         ob = [{"field": ob_field, "direction": ob_dir}]
     try:
-        intent = sdol.formulator.aggregate_analysis(
+        intent = provena.formulator.aggregate_analysis(
             entity=entity, measures=measure_list, dimensions=dims, filters=filter_list, order_by=ob,
         )
-        frame = asyncio.run(sdol.query(intent))
+        frame = asyncio.run(provena.query(intent))
         return _format_frame(frame)
     except Exception as exc:
         return json.dumps({"error": str(exc)})
@@ -393,10 +393,10 @@ def sdol_telemetry_trend(entity: str, metric: str, window: str = "last_180d", gr
         granularity: '1d', '1w', '1M'
     """
     try:
-        intent = sdol.formulator.temporal_trend(
+        intent = provena.formulator.temporal_trend(
             entity=entity, metric=metric, window={"relative": window}, granularity=granularity,
         )
-        frame = asyncio.run(sdol.query(intent))
+        frame = asyncio.run(provena.query(intent))
         return _format_frame(frame)
     except Exception as exc:
         return json.dumps({"error": str(exc)})
@@ -415,11 +415,11 @@ def sdol_search_logs(query: str, machine_ids: str = "", max_results: int = 10) -
             ids = [m.strip() for m in machine_ids.split(",") if m.strip()]
             if ids:
                 filters = [{"field": "machine_id", "operator": "in", "value": ids}]
-        intent = sdol.formulator.semantic_search(
+        intent = provena.formulator.semantic_search(
             query=query, collection="maintenance_logs",
             filters=filters, max_results=max_results,
         )
-        frame = asyncio.run(sdol.query(intent))
+        frame = asyncio.run(provena.query(intent))
         return _format_frame(frame)
     except Exception as exc:
         return json.dumps({"error": str(exc)})
@@ -437,8 +437,8 @@ def sdol_cross_source_status(machine_id: str) -> str:
         machine_id: e.g. 'EXC-0342'
     """
     try:
-        oltp_intent = sdol.formulator.point_lookup("fleet_machines", {"machine_id": machine_id})
-        olap_intent = sdol.formulator.aggregate_analysis(
+        oltp_intent = provena.formulator.point_lookup("fleet_machines", {"machine_id": machine_id})
+        olap_intent = provena.formulator.aggregate_analysis(
             entity="telemetry_daily",
             measures=[{"field": "max_engine_temp", "aggregation": "max"}],
             dimensions=["machine_id", "last_known_status"],
@@ -450,12 +450,12 @@ def sdol_cross_source_status(machine_id: str) -> str:
         today_str = str(spark.sql("SELECT current_date()").first()[0])
         olap_intent.filters[-1].value = today_str
 
-        composite = sdol.formulator.composite(
+        composite = provena.formulator.composite(
             sub_intents=[oltp_intent, olap_intent],
             fusion_operator="union",
             fusion_key="machine_id",
         )
-        frame = asyncio.run(sdol.query(composite))
+        frame = asyncio.run(provena.query(composite))
         return _format_frame(frame)
     except Exception as exc:
         return json.dumps({"error": str(exc)})
@@ -473,7 +473,7 @@ def sdol_sql(query: str) -> str:
         return json.dumps({
             "results": records, "result_count": len(records),
             "note": "Raw SQL — no Provena provenance for this query.",
-            "data_confidence": sdol.get_epistemic_context(),
+            "data_confidence": provena.get_epistemic_context(),
         }, indent=2, default=str)
     except Exception as exc:
         return json.dumps({"error": str(exc)})
@@ -481,7 +481,7 @@ def sdol_sql(query: str) -> str:
 @tool
 def sdol_data_confidence() -> str:
     """Return overall data confidence summary for all data queried so far."""
-    return sdol.get_epistemic_context()
+    return provena.get_epistemic_context()
 
 def _parse_filters(raw):
     if not raw or not raw.strip():
@@ -671,8 +671,8 @@ q = "What is Machine EXC-0001's model and firmware version?"
 print("-- Baseline --")
 resp, tokens = invoke_agent(baseline_agent, q)
 print(f"{resp[:500]}  [context_chars={tokens}]")
-print("\n-- SDOL --")
-sdol.reset()
+print("\n-- Provena --")
+provena.reset()
 resp, tokens = invoke_agent(sdol_agent, q)
 print(f"{resp[:500]}  [context_chars={tokens}]")
 
@@ -791,7 +791,7 @@ for endpoint in MODEL_ENDPOINTS:
             cat = eq["category"]
             print(f"[{i+1}/{len(EVAL_QUESTIONS)}] {cat}: {q[:70]}...")
 
-            sdol.reset()
+            provena.reset()
             t0 = time.time()
             try:
                 b_resp, b_tokens = invoke_agent(baseline_agent, q)
@@ -799,7 +799,7 @@ for endpoint in MODEL_ENDPOINTS:
                 b_resp, b_tokens = f"ERROR: {exc}", 0
             b_lat = round(time.time() - t0, 2)
 
-            sdol.reset()
+            provena.reset()
             t0 = time.time()
             try:
                 s_resp, s_tokens = invoke_agent(sdol_agent, q)
@@ -816,7 +816,7 @@ for endpoint in MODEL_ENDPOINTS:
                 "sdol_context_chars": s_tokens,
                 "sdol_cost_usd": estimate_cost(s_tokens, len(s_resp)),
             })
-            print(f"   baseline={b_lat}s/{b_tokens}chars  sdol={s_lat}s/{s_tokens}chars")
+            print(f"   baseline={b_lat}s/{b_tokens}chars  provena={s_lat}s/{s_tokens}chars")
 
         run_df = pd.DataFrame(rows)
         run_df["run_index"] = run_idx
@@ -940,7 +940,7 @@ with mlflow.start_run(run_name=f"benchmark_sweep_{int(time.time())}"):
         for run_idx, run_df in enumerate(model_runs):
             for agent_name, resp_col, lat_col, chars_col, cost_col in [
                 ("baseline", "baseline_response", "baseline_latency_sec", "baseline_context_chars", "baseline_cost_usd"),
-                ("sdol", "sdol_response", "sdol_latency_sec", "sdol_context_chars", "sdol_cost_usd"),
+                ("provena", "sdol_response", "sdol_latency_sec", "sdol_context_chars", "sdol_cost_usd"),
             ]:
                 run_label = f"{model_short}_{agent_name}_run{run_idx}"
                 with mlflow.start_run(run_name=run_label, nested=True):
@@ -1019,7 +1019,7 @@ if len(metrics_agg_df) > 0:
         model_short = endpoint.split("/")[-1] if "/" in endpoint else endpoint
         print(f"\nModel: {model_short}")
         b_data = model_data[model_data["agent"] == "baseline"].set_index("metric")
-        s_data = model_data[model_data["agent"] == "sdol"].set_index("metric")
+        s_data = model_data[model_data["agent"] == "provena"].set_index("metric")
         all_metrics = sorted(set(list(b_data.index) + list(s_data.index)))
         comp_rows = []
         for m in all_metrics:
@@ -1082,7 +1082,7 @@ cost_comparison = pd.DataFrame({
         round(b_session_cost * 10000, 2),
         round(b_session_cost * 1000 * 365, 2),
     ],
-    "SDOL ($)": [
+    "Provena ($)": [
         round(s_session_cost, 4),
         round(s_session_cost * 100, 2),
         round(s_session_cost * 1000, 2),
@@ -1098,7 +1098,7 @@ cost_comparison = pd.DataFrame({
     ],
 })
 display(spark.createDataFrame(cost_comparison))
-print(f"\nSDOL saves ~${round(b_session_cost - s_session_cost, 4)} per session ({round((1 - s_session_cost/max(b_session_cost, 0.0001)) * 100, 1)}% reduction)")
+print(f"\nProvena saves ~${round(b_session_cost - s_session_cost, 4)} per session ({round((1 - s_session_cost/max(b_session_cost, 0.0001)) * 100, 1)}% reduction)")
 
 # COMMAND ----------
 
@@ -1107,7 +1107,7 @@ print(f"\nSDOL saves ~${round(b_session_cost - s_session_cost, 4)} per session (
 
 # COMMAND ----------
 
-cost_summary = sdol.get_cost_summary()
+cost_summary = provena.get_cost_summary()
 print(f"Total Provena queries: {cost_summary['total_queries']}")
 print(f"Total execution time: {cost_summary['total_execution_ms']:.0f}ms")
 print("\nBy source:")
@@ -1127,7 +1127,7 @@ if len(metrics_agg_df) > 0:
     # Use first model's data for the chart
     chart_data = metrics_agg_df[metrics_agg_df["model"] == MODEL_ENDPOINTS[0]]
     b_means = chart_data[chart_data["agent"] == "baseline"].groupby("metric")["value"].agg(["mean", "std"])
-    s_means = chart_data[chart_data["agent"] == "sdol"].groupby("metric")["value"].agg(["mean", "std"])
+    s_means = chart_data[chart_data["agent"] == "provena"].groupby("metric")["value"].agg(["mean", "std"])
     common_metrics = sorted(set(b_means.index) & set(s_means.index))
 
     if common_metrics:
@@ -1140,7 +1140,7 @@ if len(metrics_agg_df) > 0:
         s_err = [s_means.loc[k, "std"] if NUM_RUNS > 1 else 0 for k in common_metrics]
 
         ax.bar([i - w/2 for i in x], b_vals, w, yerr=b_err, label="Baseline", color="#5B9BD5", capsize=3)
-        ax.bar([i + w/2 for i in x], s_vals, w, yerr=s_err, label="SDOL", color="#70AD47", capsize=3)
+        ax.bar([i + w/2 for i in x], s_vals, w, yerr=s_err, label="Provena", color="#70AD47", capsize=3)
         ax.set_xticks(list(x))
         ax.set_xticklabels(common_metrics, rotation=35, ha="right", fontsize=8)
         ax.set_ylabel("Score")
@@ -1186,7 +1186,7 @@ for _, row in results_df.iterrows():
     print("-" * 100)
     print(f"BASELINE ({row['baseline_latency_sec']}s, ${row['baseline_cost_usd']}):\n{row['baseline_response'][:600]}")
     print("-" * 50)
-    print(f"SDOL ({row['sdol_latency_sec']}s, ${row['sdol_cost_usd']}):\n{row['sdol_response'][:600]}")
+    print(f"Provena ({row['sdol_latency_sec']}s, ${row['sdol_cost_usd']}):\n{row['sdol_response'][:600]}")
     print()
 
 # COMMAND ----------

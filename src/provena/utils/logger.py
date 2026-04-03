@@ -1,4 +1,4 @@
-"""Structured logger for SDOL."""
+"""Structured logger for Provena."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import sys
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Get a structured logger for SDOL components."""
+    """Get a structured logger for Provena components."""
     logger = logging.getLogger(f"provena.{name}")
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)

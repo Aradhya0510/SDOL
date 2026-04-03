@@ -2,7 +2,7 @@
 
 import asyncio
 
-from provena import SDOL, CapabilityRegistry, ContextCompiler, GenericOLTPConnector, SemanticRouter, TrustScorer
+from provena import Provena, CapabilityRegistry, ContextCompiler, GenericOLTPConnector, SemanticRouter, TrustScorer
 from provena.connectors.executor import MockQueryExecutor
 from provena.core.router.cost_estimator import CostEstimator
 from provena.core.router.intent_decomposer import IntentDecomposer
@@ -20,7 +20,7 @@ async def main() -> None:
     compiler = ContextCompiler(TrustScorer())
     planner = QueryPlanner(registry, IntentDecomposer(), CostEstimator())
     router = SemanticRouter(planner, compiler, registry)
-    sdol = SDOL(router)
+    provena = Provena(router)
 
     intent = provena.formulator.point_lookup(
         "customer", {"customer_id": "C-1042"}, fields=["name", "email"]

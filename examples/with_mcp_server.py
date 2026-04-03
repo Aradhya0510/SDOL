@@ -10,7 +10,7 @@ async def main() -> None:
     transport = MockMCPTransport()
     transport.set_response("query_customers", MCPResponse(
         content=[{"customer_id": "C-1042", "name": "Alice"}],
-        sdol_metadata={
+        provena_metadata={
             "retrieval_method": "direct_query",
             "consistency": "read_committed",
             "precision": "exact",
@@ -36,7 +36,7 @@ async def main() -> None:
 
     print("=== MCP Response ===")
     print(f"  Content: {response.content}")
-    print(f"  SDOL Metadata: {response.sdol_metadata}")
+    print(f"  Provena Metadata: {response.provena_metadata}")
     print()
     print("=== Provenance Envelope ===")
     print(f"  Source: {envelope.source_system}")

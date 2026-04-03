@@ -18,7 +18,7 @@
 # MAGIC | 8 | Full Pipeline | End-to-end determinism in a probabilistic system |
 # MAGIC
 # MAGIC **Prerequisites:** A Databricks workspace with serverless compute (Python 3.10).
-# MAGIC The Provena source tree must be synced to your workspace (see the `sdol_project_root` widget).
+# MAGIC The Provena source tree must be synced to your workspace (see the `provena_project_root` widget).
 
 # COMMAND ----------
 
@@ -27,18 +27,26 @@
 
 # COMMAND ----------
 
-dbutils.widgets.text("sdol_project_root", "/Workspace/Users/{user}/Provena")
+# MAGIC %pip install -U -qqqq pydantic>=2.0
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
+dbutils.widgets.text("provena_project_root", "/Workspace/Users/{user}/SDOL")
 
 # COMMAND ----------
 
 import sys, os
 
-SDOL_PROJECT_ROOT = dbutils.widgets.get("sdol_project_root")
+PROVENA_PROJECT_ROOT = dbutils.widgets.get("provena_project_root")
 
 try:
     import provena
 except ImportError:
-    resolved = SDOL_PROJECT_ROOT.replace(
+    resolved = PROVENA_PROJECT_ROOT.replace(
         "{user}", spark.sql("SELECT current_user()").first()[0]
     )
     src_path = os.path.join(resolved, "src")

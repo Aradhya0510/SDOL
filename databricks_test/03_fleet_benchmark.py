@@ -14,7 +14,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -U -qqqq databricks-langchain databricks-agents langgraph langchain langchain-core nest_asyncio databricks-vectorsearch
+# MAGIC %pip install -U -qqqq pydantic>=2.0 databricks-langchain databricks-agents langgraph langchain langchain-core nest_asyncio databricks-vectorsearch
 
 # COMMAND ----------
 
@@ -31,7 +31,7 @@ dbutils.widgets.text("catalog", "users")
 dbutils.widgets.text("schema", "default")
 dbutils.widgets.text("llm_endpoint", "databricks-claude-sonnet-4-6")
 dbutils.widgets.text("model_endpoints", "")
-dbutils.widgets.text("sdol_project_root", "/Workspace/Users/{user}/Provena")
+dbutils.widgets.text("provena_project_root", "/Workspace/Users/{user}/SDOL")
 dbutils.widgets.text("vs_endpoint", "provena_fleet_vs")
 dbutils.widgets.text("num_runs", "1")
 dbutils.widgets.text("input_price_per_1k_tokens", "0.003")
@@ -44,7 +44,7 @@ LLM_ENDPOINT = dbutils.widgets.get("llm_endpoint")
 _model_endpoints_raw = dbutils.widgets.get("model_endpoints").strip()
 MODEL_ENDPOINTS = [e.strip() for e in _model_endpoints_raw.split(",") if e.strip()] if _model_endpoints_raw else [LLM_ENDPOINT]
 
-SDOL_PROJECT_ROOT = dbutils.widgets.get("sdol_project_root")
+PROVENA_PROJECT_ROOT = dbutils.widgets.get("provena_project_root")
 
 VS_ENDPOINT_NAME = dbutils.widgets.get("vs_endpoint")
 VS_INDEX_NAME = f"{CATALOG}.{SCHEMA}.maintenance_logs_index"
@@ -72,7 +72,7 @@ import sys, os
 try:
     import provena
 except ImportError:
-    resolved = SDOL_PROJECT_ROOT.replace("{user}", spark.sql("SELECT current_user()").first()[0])
+    resolved = PROVENA_PROJECT_ROOT.replace("{user}", spark.sql("SELECT current_user()").first()[0])
     src_path = os.path.join(resolved, "src")
     if os.path.isdir(src_path):
         sys.path.insert(0, src_path)

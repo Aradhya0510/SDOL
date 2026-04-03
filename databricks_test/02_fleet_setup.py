@@ -22,7 +22,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -U -qqqq databricks-vectorsearch
+# MAGIC %pip install -U -qqqq pydantic>=2.0 databricks-vectorsearch
 
 # COMMAND ----------
 
@@ -393,20 +393,28 @@ existing_indexes = [
 
 source_table = f"{CATALOG}.{SCHEMA}.maintenance_logs"
 
+spark.sql(f"ALTER TABLE {source_table} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)")
+
 if VS_INDEX_NAME not in existing_indexes:
     print(f"Creating delta-sync index '{VS_INDEX_NAME}'...")
-    spark.sql(f"ALTER TABLE {source_table} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)")
-    vsc.create_delta_sync_index(
-        endpoint_name=VS_ENDPOINT_NAME,
-        index_name=VS_INDEX_NAME,
-        source_table_name=source_table,
-        pipeline_type="TRIGGERED",
-        primary_key="log_id",
-        embedding_source_column="description",
-        embedding_model_endpoint_name=EMBEDDING_MODEL,
-        columns_to_sync=["log_id", "machine_id", "log_date", "fault_category", "severity", "description", "technician_name"],
-    )
-    print("Index creation started. Waiting for initial sync...")
+    try:
+        vsc.create_delta_sync_index(
+            endpoint_name=VS_ENDPOINT_NAME,
+            index_name=VS_INDEX_NAME,
+            source_table_name=source_table,
+            pipeline_type="TRIGGERED",
+            primary_key="log_id",
+            embedding_source_column="description",
+            embedding_model_endpoint_name=EMBEDDING_MODEL,
+            columns_to_sync=["log_id", "machine_id", "log_date", "fault_category", "severity", "description", "technician_name"],
+        )
+        print("Index creation started. Waiting for initial sync...")
+    except Exception as e:
+        if "already exists" in str(e):
+            print(f"Index already exists (race condition). Triggering sync...")
+            vsc.get_index(endpoint_name=VS_ENDPOINT_NAME, index_name=VS_INDEX_NAME).sync()
+        else:
+            raise
 else:
     print(f"Index '{VS_INDEX_NAME}' already exists. Triggering sync...")
     vsc.get_index(endpoint_name=VS_ENDPOINT_NAME, index_name=VS_INDEX_NAME).sync()

@@ -25,7 +25,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -U -qqqq databricks-vectorsearch nest_asyncio
+# MAGIC %pip install -U -qqqq pydantic>=2.0 databricks-vectorsearch nest_asyncio
 
 # COMMAND ----------
 
@@ -42,13 +42,13 @@ dbutils.library.restartPython()
 dbutils.widgets.text("catalog", "users")
 dbutils.widgets.text("schema", "aradhya_chouhan")
 dbutils.widgets.text("vs_endpoint", "provena_fleet_vs")
-dbutils.widgets.text("sdol_project_root", "/Workspace/Users/{user}/Provena")
+dbutils.widgets.text("provena_project_root", "/Workspace/Users/{user}/SDOL")
 
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 VS_ENDPOINT_NAME = dbutils.widgets.get("vs_endpoint")
 VS_INDEX_NAME = f"{CATALOG}.{SCHEMA}.maintenance_logs_index"
-SDOL_PROJECT_ROOT = dbutils.widgets.get("sdol_project_root")
+PROVENA_PROJECT_ROOT = dbutils.widgets.get("provena_project_root")
 
 print(f"Catalog:     {CATALOG}")
 print(f"Schema:      {SCHEMA}")
@@ -67,7 +67,7 @@ import sys, os
 try:
     import provena
 except ImportError:
-    resolved = SDOL_PROJECT_ROOT.replace("{user}", spark.sql("SELECT current_user()").first()[0])
+    resolved = PROVENA_PROJECT_ROOT.replace("{user}", spark.sql("SELECT current_user()").first()[0])
     src_path = os.path.join(resolved, "src")
     if os.path.isdir(src_path):
         sys.path.insert(0, src_path)
@@ -378,9 +378,9 @@ candidates = registry.find_candidates(intent)
 print("STEP 2 - Routing (connector candidates):")
 for c in candidates:
     print(f"  Candidate: {c.connector.id}")
-    print(f"    Source system:    {c.capability.source_system}")
+    print(f"    Source system:    {c.connector.source_system}")
     print(f"    Suitability:     {c.suitability_score:.2f}")
-    print(f"    Entities:        {c.capability.entities}")
+    print(f"    Entities:        {c.capability.available_entities}")
     print(f"    Supported types: {c.capability.supported_intent_types}")
     print()
 
